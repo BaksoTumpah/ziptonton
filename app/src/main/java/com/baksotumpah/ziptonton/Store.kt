@@ -80,6 +80,78 @@ class Store(context: Context) {
         return head + rest
     }
 
+    fun markUnwatched(film: String, entry: String) {
+        prefs.edit().remove(key(film, entry)).apply()
+    }
+
+    // ---- Kecepatan putar per film ----
+
+    fun speed(film: String): Float = prefs.getString("s|$film", null)?.toFloatOrNull() ?: 1f
+
+    fun setSpeed(film: String, v: Float) {
+        prefs.edit().putString("s|$film", v.toString()).apply()
+    }
+
+    // ---- Penanda intro per film (berlaku untuk semua part film itu), -1 = belum diatur ----
+
+    fun introStart(film: String): Long = introPair(film).first
+    fun introEnd(film: String): Long = introPair(film).second
+
+    private fun introPair(film: String): Pair<Long, Long> {
+        val p = prefs.getString("i|$film", null)?.split(",") ?: return -1L to -1L
+        return (p.getOrNull(0)?.toLongOrNull() ?: -1L) to (p.getOrNull(1)?.toLongOrNull() ?: -1L)
+    }
+
+    fun setIntroStart(film: String, ms: Long) {
+        prefs.edit().putString("i|$film", "$ms,${introEnd(film)}").apply()
+    }
+
+    fun setIntroEnd(film: String, ms: Long) {
+        prefs.edit().putString("i|$film", "${introStart(film)},$ms").apply()
+    }
+
+    fun clearIntro(film: String) {
+        prefs.edit().remove("i|$film").apply()
+    }
+
+    // ---- Sembunyikan part yang sudah ditonton (per film) ----
+
+    fun hideWatched(film: String) = prefs.getString("h|$film", null) == "1"
+
+    fun setHideWatched(film: String, v: Boolean) {
+        prefs.edit().apply { if (v) putString("h|$film", "1") else remove("h|$film") }.apply()
+    }
+
+    // ---- Cadangan & pemulihan ----
+
+    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|")
+    private val backupKeys = setOf("last_film", "last_entry")
+    private fun backupable(k: String) = k in backupKeys || backupPrefixes.any { k.startsWith(it) }
+
+    /** Semua progres, urutan part, kecepatan, penanda intro. Folder tidak ikut (izin folder tidak bisa dipindah). */
+    fun exportBackup(): String {
+        val data = JSONObject()
+        prefs.all.forEach { (k, v) -> if (v is String && backupable(k)) data.put(k, v) }
+        return JSONObject().put("app", "ziptonton").put("version", 1)
+            .put("time", System.currentTimeMillis()).put("data", data).toString(2)
+    }
+
+    /** Mengembalikan jumlah entri yang dipulihkan, atau -1 kalau file bukan cadangan ZipTonton. */
+    fun importBackup(json: String): Int {
+        val o = try { JSONObject(json) } catch (_: Exception) { return -1 }
+        if (o.optString("app") != "ziptonton") return -1
+        val d = o.optJSONObject("data") ?: return -1
+        val e = prefs.edit()
+        var n = 0
+        for (k in d.keys()) {
+            if (!backupable(k)) continue
+            val v = d.opt(k) as? String ?: continue
+            e.putString(k, v); n++
+        }
+        e.apply()
+        return n
+    }
+
     /** Pasangan (kunci film, nama part) yang terakhir ditonton. */
     fun lastWatched(): Pair<String, String>? {
         val f = prefs.getString("last_film", null) ?: return null

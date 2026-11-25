@@ -6,6 +6,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.appcompat.widget.PopupMenu
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +33,59 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) setFolder(uri)
     }
 
+    private val createBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) io.execute {
+            val ok = try {
+                contentResolver.openOutputStream(uri)?.use { it.write(store.exportBackup().toByteArray()) } != null
+            } catch (_: Exception) { false }
+            runOnUiThread { Toast.makeText(this, if (ok) R.string.backup_done else R.string.backup_failed, Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) confirmRestore(uri)
+    }
+
+    private fun confirmRestore(uri: Uri) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.restore_title)
+            .setMessage(R.string.restore_msg)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.restore_ok) { _, _ ->
+                io.execute {
+                    val n = try {
+                        val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        if (text == null || text.length > 5_000_000) -1 else store.importBackup(text)
+                    } catch (_: Exception) { -1 }
+                    runOnUiThread {
+                        val msg = if (n < 0) getString(R.string.restore_invalid) else getString(R.string.restore_done, n)
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                        if (n >= 0) adapter.rebuild()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showSettings(anchor: View) {
+        val me = this
+        PopupMenu(me, anchor).apply {
+            menu.add(0, 0, 0, me.getString(R.string.menu_version, Updater.currentCode(me))).isEnabled = false
+            menu.add(0, 1, 1, R.string.menu_check_update)
+            menu.add(0, 2, 2, R.string.menu_backup)
+            menu.add(0, 3, 3, R.string.menu_restore)
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> Updater.checkNow(me)
+                    2 -> createBackup.launch("ZipTonton-backup.json")
+                    3 -> openBackup.launch(arrayOf("*/*"))
+                }
+                true
+            }
+            show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -51,10 +107,12 @@ class MainActivity : AppCompatActivity() {
             layoutManager = grid
             adapter = this@MainActivity.adapter
         }
+        Updater.checkOnLaunch(this)
     }
 
     override fun onResume() {
         super.onResume()
+        Updater.resumePending(this)
         val folder = store.folderUri
         onboarding.visibility = if (folder == null) View.VISIBLE else View.GONE
         refresh.visibility = if (folder == null) View.GONE else View.VISIBLE
@@ -168,6 +226,7 @@ class MainActivity : AppCompatActivity() {
                     val folder = store.folderUri?.let { Library.folderName(Uri.parse(it)) } ?: ""
                     v.findViewById<TextView>(R.id.folderName).text = folder
                     v.findViewById<View>(R.id.changeFolder).setOnClickListener { pickFolder.launch(null) }
+                    v.findViewById<View>(R.id.settings).setOnClickListener { showSettings(it) }
                 }
                 is Row.Hero -> bindHero(v, row.film, row.entry)
                 Row.Section -> {

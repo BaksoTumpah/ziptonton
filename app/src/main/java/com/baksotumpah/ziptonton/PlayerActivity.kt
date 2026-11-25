@@ -16,6 +16,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.PopupMenu
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -103,6 +104,11 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var unlockBtn: View
     private lateinit var modeLabel: TextView
     private lateinit var restartBtn: MaterialButton
+    private lateinit var introBtn: TextView
+    private lateinit var skipIntro: MaterialButton
+    private lateinit var nextBox: View
+    private lateinit var nextText: TextView
+    private var countdown = 0
 
     private var player: ExoPlayer? = null
     private var videos = listOf<ZipItem>()
@@ -213,6 +219,10 @@ class PlayerActivity : AppCompatActivity() {
         unlockBtn = findViewById(R.id.unlock)
         modeLabel = findViewById(R.id.modeLabel)
         restartBtn = findViewById(R.id.restart)
+        introBtn = findViewById(R.id.introBtn)
+        skipIntro = findViewById(R.id.skipIntro)
+        nextBox = findViewById(R.id.nextBox)
+        nextText = findViewById(R.id.nextText)
         indBar.setTrackColor(0x40FFFFFF)
 
         findViewById<View>(R.id.back).setOnClickListener { finish() }
@@ -237,6 +247,12 @@ class PlayerActivity : AppCompatActivity() {
         pipBtn.visibility = if (pipSupported()) View.VISIBLE else View.GONE
         pipBtn.setOnClickListener { if (Build.VERSION.SDK_INT >= 26) enterPip() }
         restartBtn.setOnClickListener { player?.seekTo(0); restartBtn.visibility = View.GONE }
+        introBtn.setOnClickListener { showIntroMenu() }
+        skipIntro.setOnClickListener {
+            player?.seekTo(store.introEnd(filmKey))
+            skipIntro.visibility = View.GONE
+        }
+        findViewById<View>(R.id.nextCancel).setOnClickListener { cancelCountdown(); setControls(true) }
 
         buildSpeedChips()
 
@@ -268,6 +284,7 @@ class PlayerActivity : AppCompatActivity() {
             chip.text = speedLabel(s)
             chip.setOnClickListener {
                 player?.playbackParameters = PlaybackParameters(s)
+                store.setSpeed(filmKey, s)
                 speedBtn.text = speedLabel(s)
                 refreshSpeedChips()
                 bumpControls()
@@ -475,6 +492,11 @@ class PlayerActivity : AppCompatActivity() {
         val p = ExoPlayer.Builder(this).build()
         player = p
         playerView.player = p
+        p.pauseAtEndOfMediaItems = true   // berhenti di akhir part agar hitung mundur bisa tampil
+        val sp = store.speed(filmKey)
+        if (sp != 1f) p.playbackParameters = PlaybackParameters(sp)
+        speedBtn.text = speedLabel(sp)
+        refreshSpeedChips()
 
         val startItem = videos[startIdx]
         val prog = store.progress(filmKey, startItem.name)
@@ -510,6 +532,77 @@ class PlayerActivity : AppCompatActivity() {
             seek.secondaryProgress = if (dur > 0) (p.bufferedPosition * 1000 / dur).toInt() else 0
         }
         durText.text = if (dur > 0) Fmt.time(dur) else "--:--"
+        updateSkipIntro()
+    }
+
+    private fun updateSkipIntro() {
+        val p = player ?: return
+        val s = store.introStart(filmKey)
+        val e = store.introEnd(filmKey)
+        val pos = p.currentPosition
+        val show = s >= 0 && e > s && pos >= s && pos < e - 1_000 && p.currentMediaItemIndex == currentIdx
+        skipIntro.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun showIntroMenu() {
+        val p = player ?: return
+        handler.removeCallbacks(hideControls)
+        val menu = PopupMenu(this, introBtn)
+        menu.menu.add(0, 1, 0, R.string.intro_mark_start)
+        menu.menu.add(0, 2, 1, R.string.intro_mark_end)
+        menu.menu.add(0, 3, 2, R.string.intro_skip90)
+        if (store.introStart(filmKey) >= 0 || store.introEnd(filmKey) >= 0) menu.menu.add(0, 4, 3, R.string.intro_clear)
+        menu.setOnMenuItemClickListener { item ->
+            val pos = p.currentPosition
+            when (item.itemId) {
+                1 -> { store.setIntroStart(filmKey, pos); showMode(getString(R.string.intro_start_set, Fmt.time(pos))) }
+                2 -> {
+                    val st = store.introStart(filmKey)
+                    if (st in 0 until pos) { store.setIntroEnd(filmKey, pos); showMode(getString(R.string.intro_end_set, Fmt.time(pos))) }
+                    else showMode(getString(R.string.intro_bad))
+                }
+                3 -> seekBy(90_000)
+                4 -> { store.clearIntro(filmKey); showMode(getString(R.string.intro_cleared)) }
+            }
+            true
+        }
+        menu.setOnDismissListener { bumpControls() }
+        menu.show()
+    }
+
+    // ---- Lanjut otomatis ke part berikutnya (hitung mundur 5 detik) ----
+
+    private val countdownTick = object : Runnable {
+        override fun run() {
+            countdown--
+            if (countdown <= 0) goNext()
+            else {
+                nextText.text = getString(R.string.next_in, countdown)
+                handler.postDelayed(this, 1_000)
+            }
+        }
+    }
+
+    private fun startCountdown() {
+        countdown = 5
+        nextText.text = getString(R.string.next_in, countdown)
+        nextBox.visibility = View.VISIBLE
+        handler.removeCallbacks(countdownTick)
+        handler.postDelayed(countdownTick, 1_000)
+    }
+
+    private fun cancelCountdown() {
+        handler.removeCallbacks(countdownTick)
+        nextBox.visibility = View.GONE
+    }
+
+    private fun goNext() {
+        cancelCountdown()
+        val p = player ?: return
+        if (!p.hasNextMediaItem()) return
+        lastPos = 0L; lastDur = 0L   // part lama sudah ditandai selesai; jangan ditimpa
+        p.seekToNextMediaItem()
+        p.play()
     }
 
     private val listener = object : Player.Listener {
@@ -518,6 +611,17 @@ class PlayerActivity : AppCompatActivity() {
             playBtn.contentDescription = getString(if (isPlaying) R.string.pause else R.string.play)
             if (isPlaying) bumpControls() else handler.removeCallbacks(hideControls)
             if (Build.VERSION.SDK_INT >= 26 && pipSupported()) setPictureInPictureParams(pipParams())
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (playWhenReady) { cancelCountdown(); return }
+            if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                val p = player ?: return
+                videos.getOrNull(currentIdx)?.let {
+                    store.markFinished(filmKey, it.name, p.duration.takeIf { d -> d > 0 } ?: lastDur)
+                }
+                if (p.hasNextMediaItem()) startCountdown() else setControls(true)
+            }
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -688,6 +792,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        cancelCountdown()
         saveNow()
         player?.pause()
         // Jendela kecil ditutup (tombol X) -> akhiri pemutar
