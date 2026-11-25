@@ -183,7 +183,7 @@ class PlayerActivity : AppCompatActivity() {
                     Toast.makeText(this, R.string.open_failed, Toast.LENGTH_LONG).show()
                     finish(); return@runOnUiThread
                 }
-                videos = v
+                videos = store.applyOrder(filmKey, v)
                 startPlayer(v.indexOfFirst { it.name == entry }.coerceAtLeast(0))
             }
         }
@@ -302,7 +302,7 @@ class PlayerActivity : AppCompatActivity() {
         locked = lock
         if (lock) {
             controls.visibility = View.GONE
-            flashUnlock()
+            unlockBtn.visibility = View.GONE
             showMode(getString(R.string.locked))
         } else {
             unlockBtn.visibility = View.GONE
@@ -313,7 +313,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun flashUnlock() {
         unlockBtn.visibility = View.VISIBLE
         handler.removeCallbacks(hideUnlock)
-        handler.postDelayed(hideUnlock, 2_500)
+        handler.postDelayed(hideUnlock, 2_000)
     }
 
     private fun showMode(text: String) {
@@ -364,7 +364,14 @@ class PlayerActivity : AppCompatActivity() {
                 return true
             }
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                if (locked) return true
+                if (locked) {
+                    // Mode kunci: ketuk 2 kali di mana saja = putar/jeda
+                    handler.removeCallbacks(hideUnlock)
+                    unlockBtn.visibility = View.GONE
+                    togglePlay()
+                    showMode(getString(if (player?.playWhenReady == true) R.string.play else R.string.pause))
+                    return true
+                }
                 val third = layer.width / 3f
                 when {
                     e.x < third -> { seekBy(-10_000); showTap(tapLeft) }

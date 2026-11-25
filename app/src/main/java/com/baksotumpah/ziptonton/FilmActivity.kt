@@ -3,13 +3,16 @@ package com.baksotumpah.ziptonton
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.annotation.SuppressLint
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -28,7 +31,9 @@ class FilmActivity : AppCompatActivity() {
     private lateinit var key: String
     private lateinit var uri: Uri
     private var film: Film? = null
+    private val parts = mutableListOf<ZipItem>()
     private val adapter = PartAdapter()
+    private lateinit var touchHelper: ItemTouchHelper
     private val io = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,22 +47,49 @@ class FilmActivity : AppCompatActivity() {
         findViewById<View>(R.id.more).setOnClickListener { v ->
             PopupMenu(this, v).apply {
                 menu.add(0, 1, 0, R.string.reset_progress)
-                setOnMenuItemClickListener {
-                    MaterialAlertDialogBuilder(this@FilmActivity)
-                        .setTitle(R.string.reset_title)
-                        .setMessage(R.string.reset_msg)
-                        .setNegativeButton(R.string.cancel, null)
-                        .setPositiveButton(R.string.reset) { _, _ -> store.resetFilm(key); adapter.notifyDataSetChanged() }
-                        .show()
+                menu.add(0, 2, 1, R.string.reset_order)
+                setOnMenuItemClickListener { item ->
+                    if (item.itemId == 2) {
+                        store.clearOrder(key)
+                        film?.let { parts.clear(); parts.addAll(it.videos.sortedWith(ZipIndex.naturalOrder)) }
+                        adapter.notifyDataSetChanged()
+                    } else {
+                        MaterialAlertDialogBuilder(this@FilmActivity)
+                            .setTitle(R.string.reset_title)
+                            .setMessage(R.string.reset_msg)
+                            .setNegativeButton(R.string.cancel, null)
+                            .setPositiveButton(R.string.reset) { _, _ -> store.resetFilm(key); adapter.notifyDataSetChanged() }
+                            .show()
+                    }
                     true
                 }
                 show()
             }
         }
-        findViewById<RecyclerView>(R.id.list).apply {
+        val list = findViewById<RecyclerView>(R.id.list).apply {
             layoutManager = LinearLayoutManager(this@FilmActivity)
             adapter = this@FilmActivity.adapter
         }
+        touchHelper = ItemTouchHelper(object : ItemTouchHelper.Callback() {
+            override fun isLongPressDragEnabled() = false
+            override fun isItemViewSwipeEnabled() = false
+            override fun getMovementFlags(rv: RecyclerView, vh: RecyclerView.ViewHolder) =
+                if (vh.bindingAdapterPosition <= 0) 0 else makeMovementFlags(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0)
+            override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+                val from = vh.bindingAdapterPosition; val to = target.bindingAdapterPosition
+                if (from <= 0 || to <= 0) return false
+                parts.add(to - 1, parts.removeAt(from - 1))
+                adapter.notifyItemMoved(from, to)
+                return true
+            }
+            override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+            override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+                super.clearView(rv, vh)
+                store.saveOrder(key, parts.map { it.name })
+                rv.post { adapter.notifyDataSetChanged() }   // perbarui nomor & bar progres
+            }
+        })
+        touchHelper.attachToRecyclerView(list)
 
         io.execute {
             val f = try {
@@ -68,6 +100,7 @@ class FilmActivity : AppCompatActivity() {
             runOnUiThread {
                 if (f == null || f.videos.isEmpty()) { finish(); return@runOnUiThread }
                 film = f
+                parts.clear(); parts.addAll(store.applyOrder(key, f.videos))
                 adapter.notifyDataSetChanged()
             }
         }
@@ -86,7 +119,7 @@ class FilmActivity : AppCompatActivity() {
     }
 
     inner class PartAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-        override fun getItemCount() = film?.let { it.videos.size + 1 } ?: 0
+        override fun getItemCount() = if (film != null) parts.size + 1 else 0
         override fun getItemViewType(position: Int) = if (position == 0) 0 else 1
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -97,12 +130,12 @@ class FilmActivity : AppCompatActivity() {
         override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
             val f = film ?: return
             val v = h.itemView
-            if (position == 0) bindHeader(v, f) else bindPart(v, f, f.videos[position - 1], position)
+            if (position == 0) bindHeader(v, f) else bindPart(h, v, f, parts[position - 1], position)
         }
 
         private fun bindHeader(v: View, f: Film) {
-            val names = f.entryNames
-            val totalSize = f.videos.sumOf { it.size }
+            val names = parts.map { it.name }
+            val totalSize = parts.sumOf { it.size }
             v.findViewById<TextView>(R.id.title).text = f.title
             v.findViewById<TextView>(R.id.initial).text = f.title.take(1).uppercase()
             v.findViewById<TextView>(R.id.meta).text =
@@ -123,7 +156,8 @@ class FilmActivity : AppCompatActivity() {
             Thumbs.loadFilm(v.findViewById<ImageView>(R.id.backdrop), f, target)
         }
 
-        private fun bindPart(v: View, f: Film, item: ZipItem, number: Int) {
+        @SuppressLint("ClickableViewAccessibility")
+        private fun bindPart(h: RecyclerView.ViewHolder, v: View, f: Film, item: ZipItem, number: Int) {
             val p = store.progress(f.key, item.name)
             v.findViewById<TextView>(R.id.title).text = Fmt.stripExt(item.name)
             v.findViewById<TextView>(R.id.number).text = number.toString()
@@ -140,6 +174,10 @@ class FilmActivity : AppCompatActivity() {
             bar.setParts(listOf(p?.fraction ?: 0f))
             Thumbs.loadPart(v.findViewById(R.id.thumb), f, item)
             v.setOnClickListener { play(item.name) }
+            v.findViewById<View>(R.id.handle).setOnTouchListener { _, e ->
+                if (e.actionMasked == MotionEvent.ACTION_DOWN) touchHelper.startDrag(h)
+                true
+            }
         }
     }
 }

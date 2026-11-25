@@ -1,6 +1,7 @@
 package com.baksotumpah.ziptonton
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
@@ -51,6 +52,32 @@ class Store(context: Context) {
         prefs.all.keys.filter { it.startsWith("p|$film|") }.forEach { e.remove(it) }
         if (prefs.getString("last_film", null) == film) e.remove("last_film").remove("last_entry")
         e.apply()
+    }
+
+    // ---- Urutan part manual (diatur user lewat tarik-geser di halaman film) ----
+
+    private fun orderKey(film: String) = "o|$film"
+
+    fun saveOrder(film: String, names: List<String>) {
+        prefs.edit().putString(orderKey(film), JSONArray(names).toString()).apply()
+    }
+
+    fun clearOrder(film: String) {
+        prefs.edit().remove(orderKey(film)).apply()
+    }
+
+    fun hasOrder(film: String) = prefs.contains(orderKey(film))
+
+    /** Terapkan urutan manual; part yang belum tercatat ditaruh di belakang sesuai urutan alami. */
+    fun applyOrder(film: String, items: List<ZipItem>): List<ZipItem> {
+        val s = prefs.getString(orderKey(film), null) ?: return items
+        val saved = try {
+            JSONArray(s).let { a -> (0 until a.length()).map { a.getString(it) } }
+        } catch (_: Exception) { return items }
+        val byName = items.associateBy { it.name }
+        val head = saved.mapNotNull { byName[it] }
+        val rest = items.filter { it.name !in saved }
+        return head + rest
     }
 
     /** Pasangan (kunci film, nama part) yang terakhir ditonton. */

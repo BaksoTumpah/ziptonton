@@ -62,4 +62,6 @@
     <string name="open_failed">ZIP tidak bisa dibuka. Periksa apakah file masih ada di folder.</string>
     <string name="play_error">Tidak bisa memutar: %1$s</string>
     <string name="codec_unsupported">format audio/video ini tidak didukung HP</string>
+    <string name="drag_part">Geser untuk memindahkan urutan</string>
+    <string name="reset_order">Urutan otomatis</string>
 </resources>

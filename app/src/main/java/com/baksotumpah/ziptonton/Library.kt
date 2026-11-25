@@ -27,11 +27,11 @@ object Library {
     fun scan(context: Context, treeUri: Uri): List<Film> {
         val out = ArrayList<Film>()
         val rootId = DocumentsContract.getTreeDocumentId(treeUri)
-        walk(context, treeUri, rootId, "", 0, out)
+        walk(context, treeUri, rootId, "", 0, out, Store(context))
         return out.sortedWith { a, b -> ZipIndex.naturalCompare(a.title, b.title) }
     }
 
-    private fun walk(context: Context, tree: Uri, docId: String, prefix: String, depth: Int, out: MutableList<Film>) {
+    private fun walk(context: Context, tree: Uri, docId: String, prefix: String, depth: Int, out: MutableList<Film>, store: Store) {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
         val cols = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -54,12 +54,12 @@ object Library {
                     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
                     val videos = try { index(context, uri, size, mod) } catch (_: Exception) { emptyList() }
                     if (videos.isNotEmpty()) {
-                        out += Film(prefix + name, uri, name.substringBeforeLast('.'), size, mod, videos)
+                        out += Film(prefix + name, uri, name.substringBeforeLast('.'), size, mod, store.applyOrder(prefix + name, videos))
                     }
                 }
             }
         }
-        for ((id, name) in subdirs) walk(context, tree, id, "$prefix$name/", depth + 1, out)
+        for ((id, name) in subdirs) walk(context, tree, id, "$prefix$name/", depth + 1, out, store)
     }
 
     private fun index(context: Context, uri: Uri, size: Long, mod: Long): List<ZipItem> {
