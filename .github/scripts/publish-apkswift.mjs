@@ -6,10 +6,10 @@
  *
  * Env wajib : APK_PATH, TAG, BUILD_NUMBER, REPO (BaksoTumpah/ziptonton)
  * Env rahasia: APKSWIFT_USER, APKSWIFT_PASS (akun developer ApkSwift). Kalau kosong, langkah dilewati.
- * Env opsional: CHANGELOG, APP_NAME, APP_DESC, APP_CAT, VERSION_NAME, APKSWIFT_REFERER,
+ * Env opsional: ICON_PATH (WebP/PNG 144px, default .github/apkswift-icon.webp), CHANGELOG, APP_NAME, APP_DESC, APP_CAT, VERSION_NAME, APKSWIFT_REFERER,
  *               IDENTITY_BASE / FIRESTORE_BASE (untuk uji lokal)
  */
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 
@@ -92,19 +92,28 @@ async function main() {
   const versions = [entry, ...old.filter((x) => x.v !== entry.v)].slice(0, MAX_VERSIONS);
   const fields = { versions: { arrayValue: { values: versions.map(encEntry) } }, updated: { integerValue: String(Date.now()) } };
   const mask = ["versions", "updated"];
+  // Logo: hanya diisi kalau di situs masih kosong, supaya logo yang diganti manual di panel tidak tertimpa
+  const iconPath = env("ICON_PATH", ".github/apkswift-icon.webp");
+  const hasIcon = exists && ((cur.json.fields?.icon?.stringValue) || "") !== "";
+  let iconSet = false;
+  if (!hasIcon && existsSync(iconPath)) {
+    const ib = readFileSync(iconPath);
+    const ext = iconPath.toLowerCase().endsWith(".png") ? "png" : "webp";
+    if (ib.length <= 200 * 1024) { fields.icon = S(`data:image/${ext};base64,${ib.toString("base64")}`); mask.push("icon"); iconSet = true; }
+  }
   if (!exists) {
     Object.assign(fields, {
       name: S(env("APP_NAME", "ZipTonton")), pkg: S(PKG), cat: S(env("APP_CAT", "hiburan")),
-      desc: S(env("APP_DESC", "Pemutar video Android yang memutar film langsung dari dalam file ZIP tanpa ekstrak.")), icon: S(""),
+      desc: S(env("APP_DESC", "Pemutar video Android yang memutar film langsung dari dalam file ZIP tanpa ekstrak.")),
     });
-    mask.push("name", "pkg", "cat", "desc", "icon");
+    mask.push("name", "pkg", "cat", "desc");
   }
 
   // 4. Tulis (PATCH dengan updateMask: hanya kolom yang disebut yang diubah, ikon/deskripsi hasil edit manual aman)
   const q = mask.map((m) => "updateMask.fieldPaths=" + m).join("&");
   await http("PATCH", `${docUrl}?${q}`, { fields }, auth);
 
-  console.log(`ApkSwift: ${exists ? "diperbarui" : "aplikasi baru dibuat"} -> ${versionLabel}, ${entry.size}, ${versions.length} versi tercatat`);
+  console.log(`ApkSwift: ${exists ? "diperbarui" : "aplikasi baru dibuat"} -> ${versionLabel}, ${entry.size}, ${versions.length} versi tercatat${iconSet ? ", logo diunggah" : ""}`);
 }
 
 main().catch((e) => {
