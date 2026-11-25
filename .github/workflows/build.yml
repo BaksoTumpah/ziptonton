@@ -57,3 +57,15 @@ jobs:
           name: ZipTonton build ${{ github.run_number }}
           body: ${{ github.event.head_commit.message }}
           files: out/*.apk
+
+      - name: Kirim ke ApkSwift
+        continue-on-error: true   # gagal kirim ke situs tidak boleh membatalkan rilis APK
+        env:
+          APK_PATH: out/ZipTonton-${{ github.run_number }}.apk
+          TAG: build-${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
+          CHANGELOG: ${{ github.event.head_commit.message }}
+          APKSWIFT_USER: ${{ secrets.APKSWIFT_USER }}
+          APKSWIFT_PASS: ${{ secrets.APKSWIFT_PASS }}
+        run: node .github/scripts/publish-apkswift.mjs
