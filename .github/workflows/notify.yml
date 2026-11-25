@@ -1,0 +1,47 @@
+name: Notifikasi Telegram
+
+on:
+  workflow_run:
+    workflows: ["Build APK"]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  notify:
+    # Run yang dibatalkan atau dilewati tidak perlu dikabarkan
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kirim ke Telegram
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RESULT: ${{ github.event.workflow_run.conclusion }}
+          REPO: ${{ github.repository }}
+          NAME: ${{ github.event.workflow_run.name }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+            echo "::notice::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID belum diisi, notifikasi dilewati."
+            exit 0
+          fi
+          if [ "$RESULT" = "success" ]; then ICON="✅"; STATUS="berhasil"; else ICON="❌"; STATUS="gagal"; fi
+          SUBJECT=$(printf '%s' "$COMMIT_MSG" | head -n1 | cut -c1-200)
+          TEXT="${ICON} ${REPO}"$'\n'"${NAME} #${RUN_NUMBER} ${STATUS}"
+          [ -n "$SUBJECT" ] && TEXT="${TEXT}"$'\n'"${SUBJECT}"
+          if [ "$RESULT" = "success" ]; then
+            TEXT="${TEXT}"$'\n'"Rilis: https://github.com/${REPO}/releases/tag/build-${RUN_NUMBER}"
+          fi
+          TEXT="${TEXT}"$'\n'"${RUN_URL}"
+          RESP=$(curl -s --max-time 20 -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" \
+            --data-urlencode "text=${TEXT}")
+          if echo "$RESP" | grep -q '"ok":true'; then
+            echo "Notifikasi terkirim."
+          else
+            echo "::warning::Telegram menolak pesan: $(echo "$RESP" | head -c 200)"
+            exit 1
+          fi
