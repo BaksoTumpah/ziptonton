@@ -1,0 +1,9 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp" android:height="168dp" android:viewportWidth="240" android:viewportHeight="168">
+    <!-- tiga layar film bertumpuk; yang depan punya resleting (ZIP) -->
+    <path android:fillColor="#20252D" android:pathData="M60,8h152a12,12 0,0 1,12 12v76a12,12 0,0 1,-12 12H60a12,12 0,0 1,-12 -12V20a12,12 0,0 1,12 -12z"/>
+    <path android:fillColor="#2A3039" android:pathData="M38,32h152a12,12 0,0 1,12 12v76a12,12 0,0 1,-12 12H38a12,12 0,0 1,-12 -12V44a12,12 0,0 1,12 -12z"/>
+    <path android:fillColor="#F4B740" android:pathData="M16,56h152a12,12 0,0 1,12 12v76a12,12 0,0 1,-12 12H16a12,12 0,0 1,-12 -12V68a12,12 0,0 1,12 -12z"/>
+    <path android:fillColor="#231804" android:pathData="M16,64h8v6h-8zM24,70h8v6h-8zM16,76h8v6h-8zM24,82h8v6h-8zM16,88h8v6h-8zM24,94h8v6h-8zM16,100h8v6h-8zM24,106h8v6h-8zM16,112h8v6h-8zM24,118h8v6h-8zM16,124h8v6h-8zM24,130h8v6h-8zM16,136h8v6h-8z"/>
+    <path android:fillColor="#231804" android:pathData="M88,84v44l36,-22z"/>
+</vector>

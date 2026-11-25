@@ -1,0 +1,7 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- layar film 16:9 dengan resleting zip di sisi kiri dan tombol play -->
+    <path android:fillColor="#231804" android:pathData="M30,37h48a5,5 0,0 1,5 5v24a5,5 0,0 1,-5 5H30a5,5 0,0 1,-5 -5V42a5,5 0,0 1,5 -5z"/>
+    <path android:fillColor="#F4B740" android:pathData="M31,41h4v3h-4zM35,44h4v3h-4zM31,47h4v3h-4zM35,50h4v3h-4zM31,53h4v3h-4zM35,56h4v3h-4zM31,59h4v3h-4zM35,62h4v3h-4z"/>
+    <path android:fillColor="#F4B740" android:pathData="M51,45.5v17l14,-8.5z"/>
+</vector>

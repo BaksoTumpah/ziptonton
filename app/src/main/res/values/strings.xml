@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZipTonton</string>
+
+    <!-- Awal -->
+    <string name="onb_title">Satu folder untuk semua filmmu.</string>
+    <string name="onb_body">Pilih folder tempat kamu menyimpan film dalam bentuk ZIP. ZipTonton hanya membaca folder itu, memutar video langsung dari dalam ZIP, dan tidak menyalin apa pun ke galeri.</string>
+    <string name="onb_note">File asli tidak diubah, tidak diekstrak, tidak dipindah.</string>
+    <string name="pick_folder">Pilih folder</string>
+
+    <!-- Beranda -->
+    <string name="change_folder">Ganti folder</string>
+    <string name="all_films">Semua film</string>
+    <string name="film_count">%1$d film</string>
+    <string name="empty_folder">Folder %1$s belum berisi ZIP video.\n\nPindahkan file .zip ke folder itu lewat file manager, lalu tarik layar ini ke bawah untuk memuat ulang.</string>
+    <string name="continue_watching">Lanjutkan</string>
+    <string name="part_of">Part %1$d dari %2$d</string>
+    <string name="hero_sub">%1$s, %2$s</string>
+    <string name="parts_size">%1$d part, %2$s</string>
+    <string name="status_done">Selesai ditonton</string>
+    <string name="not_watched">Belum ditonton, %1$s</string>
+
+    <!-- Halaman film -->
+    <string name="back">Kembali</string>
+    <string name="more">Menu lainnya</string>
+    <string name="continue_part_at">Lanjutkan part %1$d dari %2$s</string>
+    <string name="continue_at">Lanjutkan dari %1$s</string>
+    <string name="play_part">Putar part %1$d</string>
+    <string name="play">Putar</string>
+    <string name="pause">Jeda</string>
+    <string name="parts">Daftar part</string>
+    <string name="reset_progress">Reset progres</string>
+    <string name="reset">Reset</string>
+    <string name="cancel">Batal</string>
+    <string name="reset_title">Reset progres film ini?</string>
+    <string name="reset_msg">Menit terakhir semua part di film ini dihapus. Semua part akan mulai dari awal. File ZIP tidak ikut terhapus.</string>
+
+    <!-- Pemutar -->
+    <string name="prev">Part sebelumnya</string>
+    <string name="next">Part berikutnya</string>
+    <string name="rew10">Mundur 10 detik</string>
+    <string name="ff10">Maju 10 detik</string>
+    <string name="lock">Kunci layar</string>
+    <string name="unlock">Buka kunci</string>
+    <string name="locked">Layar dikunci</string>
+    <string name="rotate">Rotasi layar</string>
+    <string name="fit">Ukuran gambar</string>
+    <string name="speed">Kecepatan</string>
+    <string name="pip">Jendela kecil</string>
+    <string name="rot_video">Ikuti video</string>
+    <string name="rot_land">Horizontal</string>
+    <string name="rot_port">Vertikal</string>
+    <string name="rot_auto">Putar otomatis</string>
+    <string name="fit_fit">Pas layar</string>
+    <string name="fit_zoom">Penuhi layar</string>
+    <string name="fit_fill">Rentang</string>
+    <string name="brightness">Kecerahan</string>
+    <string name="volume">Volume</string>
+    <string name="tap_back">−10 detik</string>
+    <string name="tap_fwd">+10 detik</string>
+    <string name="resumed_from">Lanjut dari %1$s. Ketuk untuk mulai dari awal</string>
+    <string name="open_failed">ZIP tidak bisa dibuka. Periksa apakah file masih ada di folder.</string>
+    <string name="play_error">Tidak bisa memutar: %1$s</string>
+    <string name="codec_unsupported">format audio/video ini tidak didukung HP</string>
+</resources>
