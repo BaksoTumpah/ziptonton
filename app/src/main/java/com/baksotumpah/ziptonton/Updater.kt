@@ -17,6 +17,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
+import java.util.concurrent.atomic.AtomicBoolean
 import java.net.URL
 
 /**
@@ -111,12 +112,12 @@ object Updater {
             setPadding(pad, pad / 2, pad, 0)
             addView(label); addView(bar)
         }
-        @Volatile var cancelled = false
+        val cancelled = AtomicBoolean(false)
         val dialog: AlertDialog = MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.update_title)
             .setView(box)
             .setCancelable(false)
-            .setNegativeButton(R.string.cancel) { _, _ -> cancelled = true }
+            .setNegativeButton(R.string.cancel) { _, _ -> cancelled.set(true) }
             .show()
 
         Thread {
@@ -134,7 +135,7 @@ object Updater {
                 c.inputStream.use { input ->
                     part.outputStream().use { out ->
                         val buf = ByteArray(64 * 1024)
-                        while (!cancelled) {
+                        while (!cancelled.get()) {
                             val n = input.read(buf)
                             if (n < 0) break
                             out.write(buf, 0, n)
@@ -151,18 +152,19 @@ object Updater {
                     }
                 }
                 c.disconnect()
-                if (!cancelled) {
+                if (!cancelled.get()) {
                     val apk = File(dir, "update.apk")
                     if (part.renameTo(apk)) file = apk
                 } else part.delete()
             } catch (_: Exception) { file = null }
 
+            val result = file
             activity.runOnUiThread {
                 if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
                 dialog.dismiss()
                 when {
-                    file != null -> install(activity, file)
-                    !cancelled -> Toast.makeText(activity, R.string.update_failed, Toast.LENGTH_LONG).show()
+                    result != null -> install(activity, result)
+                    !cancelled.get() -> Toast.makeText(activity, R.string.update_failed, Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
