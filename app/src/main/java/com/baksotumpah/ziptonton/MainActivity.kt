@@ -74,11 +74,13 @@ class MainActivity : AppCompatActivity() {
             menu.add(0, 1, 1, R.string.menu_check_update)
             menu.add(0, 2, 2, R.string.menu_backup)
             menu.add(0, 3, 3, R.string.menu_restore)
+            menu.add(0, 4, 4, R.string.menu_organize)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> Updater.checkNow(me)
                     2 -> createBackup.launch("ZipTonton-backup.json")
                     3 -> openBackup.launch(arrayOf("*/*"))
+                    4 -> startActivity(Intent(me, OrganizeActivity::class.java))
                 }
                 true
             }
