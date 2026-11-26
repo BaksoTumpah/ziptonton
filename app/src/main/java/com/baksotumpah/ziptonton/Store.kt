@@ -92,6 +92,14 @@ class Store(context: Context) {
         prefs.edit().putString("s|$film", v.toString()).apply()
     }
 
+    // ---- Pilihan subtitle per film: "off" atau label track (mis. "Indonesia"); null = belum memilih ----
+
+    fun subPref(film: String): String? = prefs.getString("c|$film", null)
+
+    fun setSubPref(film: String, v: String?) {
+        prefs.edit().apply { if (v.isNullOrEmpty()) remove("c|$film") else putString("c|$film", v) }.apply()
+    }
+
     // ---- Penanda intro per film (berlaku untuk semua part film itu), -1 = belum diatur ----
 
     fun introStart(film: String): Long = introPair(film).first
@@ -124,7 +132,7 @@ class Store(context: Context) {
 
     // ---- Cadangan & pemulihan ----
 
-    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|")
+    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|", "c|")
     private val backupKeys = setOf("last_film", "last_entry")
     private fun backupable(k: String) = k in backupKeys || backupPrefixes.any { k.startsWith(it) }
 

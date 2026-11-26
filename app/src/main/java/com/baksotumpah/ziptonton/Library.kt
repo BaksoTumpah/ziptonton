@@ -12,7 +12,8 @@ data class Film(
     val title: String,
     val size: Long,
     val modified: Long,
-    val videos: List<ZipItem>
+    val videos: List<ZipItem>,
+    val subs: List<SubFile> = emptyList()
 ) {
     val entryNames: List<String> get() = videos.map { it.name }
 }
@@ -21,13 +22,22 @@ data class Film(
  * Membaca HANYA folder yang dipilih user (beserta subfolder sampai 2 tingkat).
  * Tidak ada akses ke folder lain, tidak ada izin penyimpanan umum.
  */
+/** Isi sebuah ZIP: video (urut alami) dan file subtitle di dalamnya. */
+class Indexed(val videos: List<ZipItem>, val subs: List<SubFile>)
+
 object Library {
-    private val indexCache = HashMap<String, List<ZipItem>>()
+    private val indexCache = HashMap<String, Indexed>()
+
+    /** Subtitle tiap film hasil pemindaian terakhir (termasuk file lepas & ZIP subtitle terpisah). */
+    private val subsByKey = HashMap<String, List<SubFile>>()
+    fun subsFor(filmKey: String): List<SubFile>? = subsByKey[filmKey]
 
     fun scan(context: Context, treeUri: Uri): List<Film> {
         val out = ArrayList<Film>()
         val rootId = DocumentsContract.getTreeDocumentId(treeUri)
         walk(context, treeUri, rootId, "", 0, out, Store(context))
+        subsByKey.clear()
+        out.forEach { subsByKey[it.key] = it.subs }
         return out.sortedWith { a, b -> ZipIndex.naturalCompare(a.title, b.title) }
     }
 
@@ -41,6 +51,9 @@ object Library {
             DocumentsContract.Document.COLUMN_LAST_MODIFIED
         )
         val subdirs = ArrayList<Pair<String, String>>()
+        val folderFilms = ArrayList<Film>()
+        val looseSubs = ArrayList<SubFile>()
+        val subZips = ArrayList<Pair<String, List<SubFile>>>()
         context.contentResolver.query(children, cols, null, null, null)?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getString(0)
@@ -52,34 +65,77 @@ object Library {
                     if (depth < 2 && !name.startsWith(".")) subdirs += id to name
                 } else if (name.lowercase().endsWith(".zip")) {
                     val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                    val videos = try { index(context, uri, size, mod) } catch (_: Exception) { emptyList() }
-                    if (videos.isNotEmpty()) {
-                        out += Film(prefix + name, uri, name.substringBeforeLast('.'), size, mod, store.applyOrder(prefix + name, videos))
+                    val ix = try { index(context, uri, size, mod) } catch (_: Exception) { Indexed(emptyList(), emptyList()) }
+                    if (ix.videos.isNotEmpty()) {
+                        folderFilms += Film(prefix + name, uri, name.substringBeforeLast('.'), size, mod,
+                            store.applyOrder(prefix + name, ix.videos), ix.subs)
+                    } else if (ix.subs.isNotEmpty()) {
+                        subZips += name to ix.subs      // ZIP berisi subtitle saja
                     }
+                } else if (Subtitles.isSubName(name) && size <= Subtitles.MAX_SIZE) {
+                    Subtitles.make(name, uri = DocumentsContract.buildDocumentUriUsingTree(tree, id))?.let { looseSubs += it }
                 }
             }
         }
+        out += attachExternal(folderFilms, looseSubs, subZips)
         for ((id, name) in subdirs) walk(context, tree, id, "$prefix$name/", depth + 1, out, store)
     }
 
-    private fun index(context: Context, uri: Uri, size: Long, mod: Long): List<ZipItem> {
+    /**
+     * Hubungkan subtitle di luar ZIP film (file lepas atau ZIP subtitle terpisah di folder yang sama):
+     * - nama mengikuti nama ZIP film  -> berlaku untuk semua part
+     * - nama cocok dengan nama/nomor part -> hanya untuk part itu
+     * - sisanya, kalau di folder hanya ada satu film -> berlaku untuk semua part film itu
+     */
+    private fun attachExternal(films: List<Film>, loose: List<SubFile>, subZips: List<Pair<String, List<SubFile>>>): List<Film> {
+        if (films.isEmpty() || (loose.isEmpty() && subZips.isEmpty())) return films
+        val extra = HashMap<String, MutableList<SubFile>>()
+        fun add(f: Film, s: SubFile) { extra.getOrPut(f.key) { ArrayList() }.add(s) }
+        val single = films.size == 1
+
+        fun place(s: SubFile, fallback: Film?) {
+            val b = Subtitles.baseOf(s.name)
+            var used = false
+            for (f in films) {
+                if (b == Subtitles.norm(f.title)) { add(f, s.copy(global = true)); used = true }
+                else if (Subtitles.matchesAny(f.videos, b)) { add(f, s); used = true }
+            }
+            if (!used && fallback != null) add(fallback, s.copy(global = true))
+        }
+
+        for (s in loose) place(s, if (single) films[0] else null)
+        for ((zname, entries) in subZips) {
+            val target = films.firstOrNull { Subtitles.zipPairs(zname, it.title) } ?: if (single) films[0] else null
+            for (s in entries) place(s, target)
+        }
+        return films.map { f -> extra[f.key]?.let { f.copy(subs = f.subs + it) } ?: f }
+    }
+
+    private fun index(context: Context, uri: Uri, size: Long, mod: Long): Indexed {
         val cacheKey = "$uri|$size|$mod"
         indexCache[cacheKey]?.let { return it }
-        val v = loadVideos(context, uri)
+        val v = loadIndexed(context, uri)
         indexCache[cacheKey] = v
         return v
     }
 
-    /** Baca daftar video di ZIP (hanya membaca, tanpa ekstrak). */
-    fun loadVideos(context: Context, uri: Uri): List<ZipItem> {
+    /** Baca isi ZIP: daftar video dan subtitle (hanya membaca, tanpa ekstrak). */
+    fun loadIndexed(context: Context, uri: Uri): Indexed {
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: throw java.io.IOException("Tidak bisa membuka file")
         return pfd.use { fd ->
             FileInputStream(fd.fileDescriptor).channel.use { ch ->
-                ZipIndex.list(ch).filter { ZipIndex.isVideo(it) }.sortedWith(ZipIndex.naturalOrder)
+                val all = ZipIndex.list(ch)
+                val videos = all.filter { ZipIndex.isVideo(it) }.sortedWith(ZipIndex.naturalOrder)
+                val subs = all.filter { Subtitles.isSubEntry(it) }.sortedWith(ZipIndex.naturalOrder)
+                    .mapNotNull { Subtitles.make(it.name, zipUri = uri, zipItem = it) }
+                Indexed(videos, subs)
             }
         }
     }
+
+    /** Baca daftar video di ZIP (hanya membaca, tanpa ekstrak). */
+    fun loadVideos(context: Context, uri: Uri): List<ZipItem> = loadIndexed(context, uri).videos
 
     fun folderName(treeUri: Uri): String {
         val id = DocumentsContract.getTreeDocumentId(treeUri)

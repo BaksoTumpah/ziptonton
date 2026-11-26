@@ -104,4 +104,7 @@
     <string name="restore_ok">Pulihkan</string>
     <string name="restore_done">%1$d data dipulihkan</string>
     <string name="restore_invalid">File ini bukan cadangan ZipTonton</string>
+    <string name="cc">CC</string>
+    <string name="sub_off">Subtitle mati</string>
+    <string name="sub_track">Subtitle %1$d</string>
 </resources>

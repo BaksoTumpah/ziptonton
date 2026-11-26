@@ -111,6 +111,20 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/ccBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:gravity="center"
+                android:minWidth="48dp"
+                android:paddingHorizontal="8dp"
+                android:text="@string/cc"
+                android:textColor="@android:color/white"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
                 android:id="@+id/introBtn"
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"

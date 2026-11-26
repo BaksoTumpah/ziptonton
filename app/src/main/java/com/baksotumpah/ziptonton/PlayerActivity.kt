@@ -44,11 +44,16 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -105,6 +110,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var modeLabel: TextView
     private lateinit var restartBtn: MaterialButton
     private lateinit var introBtn: TextView
+    private lateinit var ccBtn: TextView
+    private var allSubs: List<SubFile> = emptyList()
+    private var subApplied = -1
     private lateinit var skipIntro: MaterialButton
     private lateinit var nextBox: View
     private lateinit var nextText: TextView
@@ -182,7 +190,9 @@ class PlayerActivity : AppCompatActivity() {
         })
 
         io.execute {
-            val v = try { Library.loadVideos(this, zipUri) } catch (e: Exception) { null }
+            val ix = try { Library.loadIndexed(this, zipUri) } catch (e: Exception) { null }
+            val v = ix?.videos
+            allSubs = Library.subsFor(filmKey) ?: ix?.subs.orEmpty()
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (v.isNullOrEmpty()) {
@@ -220,6 +230,7 @@ class PlayerActivity : AppCompatActivity() {
         modeLabel = findViewById(R.id.modeLabel)
         restartBtn = findViewById(R.id.restart)
         introBtn = findViewById(R.id.introBtn)
+        ccBtn = findViewById(R.id.ccBtn)
         skipIntro = findViewById(R.id.skipIntro)
         nextBox = findViewById(R.id.nextBox)
         nextText = findViewById(R.id.nextText)
@@ -248,6 +259,7 @@ class PlayerActivity : AppCompatActivity() {
         pipBtn.setOnClickListener { if (Build.VERSION.SDK_INT >= 26) enterPip() }
         restartBtn.setOnClickListener { player?.seekTo(0); restartBtn.visibility = View.GONE }
         introBtn.setOnClickListener { showIntroMenu() }
+        ccBtn.setOnClickListener { showSubMenu() }
         skipIntro.setOnClickListener {
             player?.seekTo(store.introEnd(filmKey))
             skipIntro.visibility = View.GONE
@@ -485,7 +497,82 @@ class PlayerActivity : AppCompatActivity() {
         val factory = DataSource.Factory { ZipEntryDataSource(applicationContext, zipUri, item) }
         val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
         val mediaItem = MediaItem.Builder().setUri(Uri.parse("zip://entry/${item.index}")).setMediaId(item.name).build()
-        return ProgressiveMediaSource.Factory(factory, extractors).createMediaSource(mediaItem)
+        val video = ProgressiveMediaSource.Factory(factory, extractors).createMediaSource(mediaItem)
+        val subs = Subtitles.forVideo(item, allSubs, videos.size, zipUri)
+        if (subs.isEmpty()) return video
+        return MergingMediaSource(video, *subs.mapIndexed { i, s -> subSource(s, i == 0) }.toTypedArray())
+    }
+
+    /** Subtitle dibaca langsung dari ZIP (tanpa ekstrak) atau dari file lepas. Gagal baca = video tetap jalan. */
+    private fun subSource(s: SubFile, first: Boolean): MediaSource {
+        val zu = s.zipUri
+        val zi = s.zipItem
+        val df: DataSource.Factory =
+            if (zu != null && zi != null) DataSource.Factory { ZipEntryDataSource(applicationContext, zu, zi) }
+            else DefaultDataSource.Factory(applicationContext)
+        val uri = s.uri ?: Uri.parse("zip://sub/${zi?.index ?: 0}")
+        val conf = MediaItem.SubtitleConfiguration.Builder(uri)
+            .setMimeType(s.mime)
+            .setLanguage(s.language)
+            .setLabel(s.label)
+            .setSelectionFlags(if (first) C.SELECTION_FLAG_DEFAULT else 0)
+            .build()
+        return SingleSampleMediaSource.Factory(df)
+            .setTreatLoadErrorsAsEndOfStream(true)
+            .createMediaSource(conf, C.TIME_UNSET)
+    }
+
+    // ---------------- Subtitle ----------------
+
+    private fun textGroups(tracks: Tracks) = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+
+    private fun selectSubtitle(group: Tracks.Group?) {
+        val p = player ?: return
+        val b = p.trackSelectionParameters.buildUpon()
+        if (group == null) {
+            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else {
+            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            b.setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+        }
+        p.trackSelectionParameters = b.build()
+    }
+
+    /** Terapkan pilihan terakhir untuk film ini (mati / bahasa); default: subtitle pertama menyala. */
+    private fun applySubPref(tracks: Tracks) {
+        val groups = textGroups(tracks)
+        if (groups.isEmpty()) return
+        val pref = store.subPref(filmKey)
+        if (pref == "off") { selectSubtitle(null); return }
+        selectSubtitle(groups.firstOrNull { it.getTrackFormat(0).label == pref } ?: groups.first())
+    }
+
+    private fun showSubMenu() {
+        val p = player ?: return
+        handler.removeCallbacks(hideControls)
+        val groups = textGroups(p.currentTracks)
+        if (groups.isEmpty()) return
+        val menu = PopupMenu(this, ccBtn)
+        menu.menu.add(0, 0, 0, R.string.sub_off)
+        groups.forEachIndexed { i, g ->
+            menu.menu.add(0, i + 1, i + 1, g.getTrackFormat(0).label ?: getString(R.string.sub_track, i + 1))
+        }
+        menu.setOnMenuItemClickListener { item ->
+            if (item.itemId == 0) {
+                selectSubtitle(null)
+                store.setSubPref(filmKey, "off")
+                showMode(getString(R.string.sub_off))
+            } else {
+                val g = groups[item.itemId - 1]
+                selectSubtitle(g)
+                val label = g.getTrackFormat(0).label
+                store.setSubPref(filmKey, label)
+                showMode(label ?: getString(R.string.sub_track, item.itemId))
+            }
+            true
+        }
+        menu.setOnDismissListener { bumpControls() }
+        menu.show()
     }
 
     private fun startPlayer(startIdx: Int) {
@@ -621,6 +708,16 @@ class PlayerActivity : AppCompatActivity() {
                     store.markFinished(filmKey, it.name, p.duration.takeIf { d -> d > 0 } ?: lastDur)
                 }
                 if (p.hasNextMediaItem()) startCountdown() else setControls(true)
+            }
+        }
+
+        override fun onTracksChanged(tracks: Tracks) {
+            val has = textGroups(tracks).isNotEmpty()
+            ccBtn.visibility = if (has) View.VISIBLE else View.GONE
+            val idx = player?.currentMediaItemIndex ?: return
+            if (has && subApplied != idx) {   // sekali per part, supaya tidak berulang
+                subApplied = idx
+                applySubPref(tracks)
             }
         }
 
