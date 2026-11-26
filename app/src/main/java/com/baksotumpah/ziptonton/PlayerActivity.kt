@@ -44,16 +44,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSpec
+import java.io.ByteArrayOutputStream
+import java.util.Locale
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -111,8 +109,17 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var restartBtn: MaterialButton
     private lateinit var introBtn: TextView
     private lateinit var ccBtn: TextView
+    private lateinit var subText: TextView
+    private lateinit var subPanel: View
+    private lateinit var subInfo: TextView
     private var allSubs: List<SubFile> = emptyList()
-    private var subApplied = -1
+    private var curSubs: List<SubFile> = emptyList()
+    private var activeSub: SubFile? = null
+    private var cues: List<Cue> = emptyList()
+    private var subOffsetMs = 0L
+    private var subGen = 0
+    private var subLoadedIdx = -1
+    private var lastSubText = ""
     private lateinit var skipIntro: MaterialButton
     private lateinit var nextBox: View
     private lateinit var nextText: TextView
@@ -183,6 +190,7 @@ class PlayerActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 when {
                     locked -> flashUnlock()
+                    subPanel.visibility == View.VISIBLE -> subPanel.visibility = View.GONE
                     speedPanel.visibility == View.VISIBLE -> speedPanel.visibility = View.GONE
                     else -> finish()
                 }
@@ -231,6 +239,9 @@ class PlayerActivity : AppCompatActivity() {
         restartBtn = findViewById(R.id.restart)
         introBtn = findViewById(R.id.introBtn)
         ccBtn = findViewById(R.id.ccBtn)
+        subText = findViewById(R.id.subText)
+        subPanel = findViewById(R.id.subPanel)
+        subInfo = findViewById(R.id.subInfo)
         skipIntro = findViewById(R.id.skipIntro)
         nextBox = findViewById(R.id.nextBox)
         nextText = findViewById(R.id.nextText)
@@ -260,6 +271,12 @@ class PlayerActivity : AppCompatActivity() {
         restartBtn.setOnClickListener { player?.seekTo(0); restartBtn.visibility = View.GONE }
         introBtn.setOnClickListener { showIntroMenu() }
         ccBtn.setOnClickListener { showSubMenu() }
+        findViewById<View>(R.id.subM1).setOnClickListener { adjustSub(-1_000L) }
+        findViewById<View>(R.id.subM01).setOnClickListener { adjustSub(-100L) }
+        findViewById<View>(R.id.subReset).setOnClickListener { adjustSub(null) }
+        findViewById<View>(R.id.subP01).setOnClickListener { adjustSub(100L) }
+        findViewById<View>(R.id.subP1).setOnClickListener { adjustSub(1_000L) }
+        findViewById<View>(R.id.subClose).setOnClickListener { subPanel.visibility = View.GONE }
         skipIntro.setOnClickListener {
             player?.seekTo(store.introEnd(filmKey))
             skipIntro.visibility = View.GONE
@@ -497,82 +514,7 @@ class PlayerActivity : AppCompatActivity() {
         val factory = DataSource.Factory { ZipEntryDataSource(applicationContext, zipUri, item) }
         val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
         val mediaItem = MediaItem.Builder().setUri(Uri.parse("zip://entry/${item.index}")).setMediaId(item.name).build()
-        val video = ProgressiveMediaSource.Factory(factory, extractors).createMediaSource(mediaItem)
-        val subs = Subtitles.forVideo(item, allSubs, videos.size, zipUri)
-        if (subs.isEmpty()) return video
-        return MergingMediaSource(video, *subs.mapIndexed { i, s -> subSource(s, i == 0) }.toTypedArray())
-    }
-
-    /** Subtitle dibaca langsung dari ZIP (tanpa ekstrak) atau dari file lepas. Gagal baca = video tetap jalan. */
-    private fun subSource(s: SubFile, first: Boolean): MediaSource {
-        val zu = s.zipUri
-        val zi = s.zipItem
-        val df: DataSource.Factory =
-            if (zu != null && zi != null) DataSource.Factory { ZipEntryDataSource(applicationContext, zu, zi) }
-            else DefaultDataSource.Factory(applicationContext)
-        val uri = s.uri ?: Uri.parse("zip://sub/${zi?.index ?: 0}")
-        val conf = MediaItem.SubtitleConfiguration.Builder(uri)
-            .setMimeType(s.mime)
-            .setLanguage(s.language)
-            .setLabel(s.label)
-            .setSelectionFlags(if (first) C.SELECTION_FLAG_DEFAULT else 0)
-            .build()
-        return SingleSampleMediaSource.Factory(df)
-            .setTreatLoadErrorsAsEndOfStream(true)
-            .createMediaSource(conf, C.TIME_UNSET)
-    }
-
-    // ---------------- Subtitle ----------------
-
-    private fun textGroups(tracks: Tracks) = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-
-    private fun selectSubtitle(group: Tracks.Group?) {
-        val p = player ?: return
-        val b = p.trackSelectionParameters.buildUpon()
-        if (group == null) {
-            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-        } else {
-            b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-            b.setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
-        }
-        p.trackSelectionParameters = b.build()
-    }
-
-    /** Terapkan pilihan terakhir untuk film ini (mati / bahasa); default: subtitle pertama menyala. */
-    private fun applySubPref(tracks: Tracks) {
-        val groups = textGroups(tracks)
-        if (groups.isEmpty()) return
-        val pref = store.subPref(filmKey)
-        if (pref == "off") { selectSubtitle(null); return }
-        selectSubtitle(groups.firstOrNull { it.getTrackFormat(0).label == pref } ?: groups.first())
-    }
-
-    private fun showSubMenu() {
-        val p = player ?: return
-        handler.removeCallbacks(hideControls)
-        val groups = textGroups(p.currentTracks)
-        if (groups.isEmpty()) return
-        val menu = PopupMenu(this, ccBtn)
-        menu.menu.add(0, 0, 0, R.string.sub_off)
-        groups.forEachIndexed { i, g ->
-            menu.menu.add(0, i + 1, i + 1, g.getTrackFormat(0).label ?: getString(R.string.sub_track, i + 1))
-        }
-        menu.setOnMenuItemClickListener { item ->
-            if (item.itemId == 0) {
-                selectSubtitle(null)
-                store.setSubPref(filmKey, "off")
-                showMode(getString(R.string.sub_off))
-            } else {
-                val g = groups[item.itemId - 1]
-                selectSubtitle(g)
-                val label = g.getTrackFormat(0).label
-                store.setSubPref(filmKey, label)
-                showMode(label ?: getString(R.string.sub_track, item.itemId))
-            }
-            true
-        }
-        menu.setOnDismissListener { bumpControls() }
-        menu.show()
+        return ProgressiveMediaSource.Factory(factory, extractors).createMediaSource(mediaItem)
     }
 
     private fun startPlayer(startIdx: Int) {
@@ -591,6 +533,7 @@ class PlayerActivity : AppCompatActivity() {
 
         currentIdx = startIdx
         updateTitles()
+        loadSubsFor(startIdx)
         p.setMediaSources(videos.map { sourceFor(it) }, startIdx, startPos)
         p.addListener(listener)
         p.prepare()
@@ -629,6 +572,139 @@ class PlayerActivity : AppCompatActivity() {
         val pos = p.currentPosition
         val show = s >= 0 && e > s && pos >= s && pos < e - 1_000 && p.currentMediaItemIndex == currentIdx
         skipIntro.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    // ---------------- Subtitle (digambar sendiri agar waktunya bisa digeser langsung) ----------------
+
+    private val subTick = object : Runnable {
+        override fun run() { renderSub(); handler.postDelayed(this, 150) }
+    }
+
+    /** Pilih subtitle untuk part ini dan muat pilihan terakhir (mati / bahasa) serta geseran waktunya. */
+    private fun loadSubsFor(idx: Int) {
+        if (idx == subLoadedIdx) return
+        subLoadedIdx = idx
+        val item = videos.getOrNull(idx) ?: return
+        curSubs = Subtitles.forVideo(item, allSubs, videos.size, zipUri)
+        ccBtn.visibility = if (curSubs.isEmpty()) View.GONE else View.VISIBLE
+        subPanel.visibility = View.GONE
+        subOffsetMs = store.subOffset(filmKey, item.name)
+        val pref = store.subPref(filmKey)
+        activeSub = if (pref == "off") null else (curSubs.firstOrNull { it.label == pref } ?: curSubs.firstOrNull())
+        activateSub()
+    }
+
+    private fun activateSub() {
+        val sub = activeSub
+        val gen = ++subGen
+        cues = emptyList()
+        renderSub()
+        if (sub == null) return
+        io.execute {
+            val parsed = try { SubtitleParser.parse(sub.name, SubtitleParser.decode(readSubBytes(sub))) } catch (_: Exception) { emptyList() }
+            runOnUiThread {
+                if (gen == subGen && !isFinishing && !isDestroyed) { cues = parsed; renderSub() }
+            }
+        }
+    }
+
+    /** Baca isi subtitle langsung dari ZIP (tanpa ekstrak) atau dari file lepas. */
+    private fun readSubBytes(s: SubFile): ByteArray {
+        val zu = s.zipUri
+        val zi = s.zipItem
+        if (zu != null && zi != null) {
+            val ds = ZipEntryDataSource(applicationContext, zu, zi)
+            try {
+                ds.open(DataSpec(Uri.parse("zip://sub/${zi.index}")))
+                val out = ByteArrayOutputStream()
+                val buf = ByteArray(16 * 1024)
+                while (true) {
+                    val n = ds.read(buf, 0, buf.size)
+                    if (n == C.RESULT_END_OF_INPUT) break
+                    out.write(buf, 0, n)
+                }
+                return out.toByteArray()
+            } finally { ds.close() }
+        }
+        val u = s.uri ?: return ByteArray(0)
+        return contentResolver.openInputStream(u)?.use { it.readBytes() } ?: ByteArray(0)
+    }
+
+    private fun renderSub() {
+        val p = player
+        var shown = ""
+        if (p != null && activeSub != null && cues.isNotEmpty() && p.currentMediaItemIndex == currentIdx) {
+            shown = cuesAt(p.currentPosition - subOffsetMs)
+        }
+        if (shown != lastSubText) {
+            lastSubText = shown
+            subText.text = shown
+            subText.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
+        }
+    }
+
+    /** Baris subtitle yang sedang tampil di waktu [t] (waktu asli file). */
+    private fun cuesAt(t: Long): String {
+        var lo = 0; var hi = cues.size - 1; var idx = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (cues[mid].startMs <= t) { idx = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        if (idx < 0) return ""
+        val parts = ArrayList<String>()
+        var i = idx; var n = 0
+        while (i >= 0 && n < 6) {   // beberapa baris bisa tumpang tindih
+            val c = cues[i]
+            if (c.endMs > t && c.text !in parts) parts.add(0, c.text)
+            i--; n++
+        }
+        return parts.joinToString("\n")
+    }
+
+    private fun showSubMenu() {
+        handler.removeCallbacks(hideControls)
+        val menu = PopupMenu(this, ccBtn)
+        menu.menu.add(0, 0, 0, R.string.sub_off)
+        curSubs.forEachIndexed { i, s -> menu.menu.add(0, i + 1, i + 1, s.label) }
+        if (activeSub != null) menu.menu.add(0, 100, 100, R.string.sub_sync)
+        menu.setOnMenuItemClickListener { item ->
+            when {
+                item.itemId == 0 -> {
+                    activeSub = null
+                    store.setSubPref(filmKey, "off")
+                    activateSub()
+                    showMode(getString(R.string.sub_off))
+                }
+                item.itemId == 100 -> { updateSubInfo(); subPanel.visibility = View.VISIBLE }
+                else -> curSubs.getOrNull(item.itemId - 1)?.let { s ->
+                    activeSub = s
+                    store.setSubPref(filmKey, s.label)
+                    activateSub()
+                    showMode(s.label)
+                }
+            }
+            true
+        }
+        menu.setOnDismissListener { bumpControls() }
+        menu.show()
+    }
+
+    /** Geser waktu subtitle. delta null = kembali ke aslinya. Positif = diperlambat, negatif = dipercepat. */
+    private fun adjustSub(delta: Long?) {
+        val item = videos.getOrNull(currentIdx) ?: return
+        subOffsetMs = if (delta == null) 0L else (subOffsetMs + delta).coerceIn(-600_000L, 600_000L)
+        store.setSubOffset(filmKey, item.name, subOffsetMs)
+        updateSubInfo()
+        renderSub()
+    }
+
+    private fun updateSubInfo() {
+        val sec = String.format(Locale("id", "ID"), "%.1f", abs(subOffsetMs) / 1000.0)
+        subInfo.text = when {
+            subOffsetMs > 0 -> getString(R.string.sub_sync_slow, sec)
+            subOffsetMs < 0 -> getString(R.string.sub_sync_fast, sec)
+            else -> getString(R.string.sub_sync_normal)
+        }
     }
 
     private fun showIntroMenu() {
@@ -711,16 +787,6 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        override fun onTracksChanged(tracks: Tracks) {
-            val has = textGroups(tracks).isNotEmpty()
-            ccBtn.visibility = if (has) View.VISIBLE else View.GONE
-            val idx = player?.currentMediaItemIndex ?: return
-            if (has && subApplied != idx) {   // sekali per part, supaya tidak berulang
-                subApplied = idx
-                applySubPref(tracks)
-            }
-        }
-
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.width > 0 && videoSize.height > 0) {
                 videoW = (videoSize.width * videoSize.pixelWidthHeightRatio).toInt()
@@ -742,6 +808,7 @@ class PlayerActivity : AppCompatActivity() {
             lastPos = 0L; lastDur = 0L
             currentIdx = p.currentMediaItemIndex
             updateTitles()
+            loadSubsFor(currentIdx)
             val item = videos.getOrNull(currentIdx) ?: return
             val prog = store.progress(filmKey, item.name)
             if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && prog != null && !prog.finished && prog.positionMs > 0) {
@@ -859,6 +926,12 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        handler.removeCallbacks(subTick)
+        handler.post(subTick)
+    }
+
     override fun onResume() {
         super.onResume()
         pipExitPending = false
@@ -889,6 +962,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        handler.removeCallbacks(subTick)
         cancelCountdown()
         saveNow()
         player?.pause()

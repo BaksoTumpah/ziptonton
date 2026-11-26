@@ -107,4 +107,15 @@
     <string name="cc">CC</string>
     <string name="sub_off">Subtitle mati</string>
     <string name="sub_track">Subtitle %1$d</string>
+    <string name="sub_sync">Sinkronisasi subtitle…</string>
+    <string name="sub_sync_hint">◀ Percepat   |   Perlambat ▶</string>
+    <string name="sub_sync_normal">Subtitle sesuai aslinya</string>
+    <string name="sub_sync_slow">Subtitle diperlambat %1$s dtk</string>
+    <string name="sub_sync_fast">Subtitle dipercepat %1$s dtk</string>
+    <string name="sync_m1">−1 dtk</string>
+    <string name="sync_m01">−0,1</string>
+    <string name="sync_reset">Reset</string>
+    <string name="sync_p01">+0,1</string>
+    <string name="sync_p1">+1 dtk</string>
+    <string name="sync_done">Selesai</string>
 </resources>

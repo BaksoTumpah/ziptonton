@@ -100,6 +100,17 @@ class Store(context: Context) {
         prefs.edit().apply { if (v.isNullOrEmpty()) remove("c|$film") else putString("c|$film", v) }.apply()
     }
 
+    // ---- Pergeseran waktu subtitle (ms): positif = subtitle diperlambat, negatif = dipercepat.
+    //      Disimpan per part; part yang belum pernah diatur memakai pengaturan terakhir film itu. ----
+
+    fun subOffset(film: String, entry: String): Long =
+        prefs.getString("d|$film|$entry", null)?.toLongOrNull()
+            ?: prefs.getString("d|$film", null)?.toLongOrNull() ?: 0L
+
+    fun setSubOffset(film: String, entry: String, ms: Long) {
+        prefs.edit().putString("d|$film|$entry", ms.toString()).putString("d|$film", ms.toString()).apply()
+    }
+
     // ---- Penanda intro per film (berlaku untuk semua part film itu), -1 = belum diatur ----
 
     fun introStart(film: String): Long = introPair(film).first
@@ -132,7 +143,7 @@ class Store(context: Context) {
 
     // ---- Cadangan & pemulihan ----
 
-    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|", "c|")
+    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|", "c|", "d|")
     private val backupKeys = setOf("last_film", "last_entry")
     private fun backupable(k: String) = k in backupKeys || backupPrefixes.any { k.startsWith(it) }
 
