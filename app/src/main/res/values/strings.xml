@@ -149,7 +149,7 @@
     <string name="org_failures">Bermasalah:\n%1$s</string>
     <string name="org_back_busy">Tekan Batal dulu untuk menghentikan</string>
     <string name="sub_info_file">Subtitle dari file</string>
-    <string name="sub_info_hard">Sub Indonesia sudah di dalam video</string>
+    <string name="sub_info_hard">Subtitle Bawaan</string>
     <string name="sub_info_none">Belum ada subtitle</string>
     <string name="sub_film_some_none">%1$d dari %2$d part belum ada subtitle</string>
     <string name="sub_film_mixed">Subtitle ada (file dan di dalam video)</string>
