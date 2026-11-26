@@ -4,6 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.annotation.SuppressLint
+import android.text.InputFilter
+import android.text.InputType
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -34,6 +38,8 @@ class FilmActivity : AppCompatActivity() {
     private val parts = mutableListOf<ZipItem>()
     private val adapter = PartAdapter()
     private lateinit var touchHelper: ItemTouchHelper
+    private lateinit var editBtn: TextView
+    private var editMode = false   // tombol urutan & pensil hanya ada saat mode edit
     private val io = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,6 +50,8 @@ class FilmActivity : AppCompatActivity() {
         key = intent.getStringExtra(EXTRA_KEY) ?: run { finish(); return }
 
         findViewById<View>(R.id.back).setOnClickListener { finish() }
+        editBtn = findViewById(R.id.editBtn)
+        editBtn.setOnClickListener { setEditMode(!editMode) }
         findViewById<View>(R.id.more).setOnClickListener { v ->
             PopupMenu(this, v).apply {
                 menu.add(0, 1, 0, R.string.reset_progress)
@@ -78,7 +86,7 @@ class FilmActivity : AppCompatActivity() {
             override fun isLongPressDragEnabled() = false
             override fun isItemViewSwipeEnabled() = false
             override fun getMovementFlags(rv: RecyclerView, vh: RecyclerView.ViewHolder) =
-                if (vh.bindingAdapterPosition <= 0 || store.hideWatched(key)) 0 else makeMovementFlags(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0)
+                if (vh.bindingAdapterPosition <= 0 || !editMode) 0 else makeMovementFlags(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0)
             override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
                 val from = vh.bindingAdapterPosition; val to = target.bindingAdapterPosition
                 if (from <= 0 || to <= 0) return false
@@ -115,6 +123,40 @@ class FilmActivity : AppCompatActivity() {
         adapter.rebuild()
     }
 
+    private fun setEditMode(on: Boolean) {
+        editMode = on
+        editBtn.setText(if (on) R.string.edit_done else R.string.edit)
+        adapter.rebuild()
+    }
+
+    /** Ubah nama tampilan part. File di dalam ZIP tidak diubah; nama hanya tersimpan di aplikasi. */
+    private fun renamePart(item: ZipItem) {
+        val input = EditText(this).apply {
+            setText(store.displayName(key, item.name))
+            setSelection(text.length)
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            filters = arrayOf(InputFilter.LengthFilter(120))
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
+        val b = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.rename_title)
+            .setView(box)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.rename_save) { _, _ ->
+                store.setAlias(key, item.name, input.text.toString())
+                adapter.rebuild()
+            }
+        if (store.hasAlias(key, item.name)) {
+            b.setNeutralButton(R.string.rename_restore) { _, _ ->
+                store.setAlias(key, item.name, null)
+                adapter.rebuild()
+            }
+        }
+        b.show()
+    }
+
     private fun play(entry: String) {
         startActivity(Intent(this, PlayerActivity::class.java)
             .putExtra(PlayerActivity.EXTRA_URI, uri.toString())
@@ -127,7 +169,7 @@ class FilmActivity : AppCompatActivity() {
         private var items: List<ZipItem> = parts
 
         fun rebuild() {
-            items = if (store.hideWatched(key)) parts.filter { store.progress(key, it.name)?.finished != true } else parts
+            items = if (store.hideWatched(key) && !editMode) parts.filter { store.progress(key, it.name)?.finished != true } else parts
             notifyDataSetChanged()
         }
 
@@ -171,7 +213,7 @@ class FilmActivity : AppCompatActivity() {
         @SuppressLint("ClickableViewAccessibility")
         private fun bindPart(h: RecyclerView.ViewHolder, v: View, f: Film, item: ZipItem, number: Int) {
             val p = store.progress(f.key, item.name)
-            v.findViewById<TextView>(R.id.title).text = Fmt.stripExt(item.name)
+            v.findViewById<TextView>(R.id.title).text = store.displayName(f.key, item.name)
             v.findViewById<TextView>(R.id.number).text = number.toString()
             v.findViewById<TextView>(R.id.meta).text = when {
                 p == null || !p.started -> getString(R.string.not_watched, Fmt.size(item.size))
@@ -200,7 +242,10 @@ class FilmActivity : AppCompatActivity() {
                 }
                 true
             }
-            v.findViewById<View>(R.id.handle).visibility = if (store.hideWatched(key)) View.INVISIBLE else View.VISIBLE
+            v.findViewById<View>(R.id.handle).visibility = if (editMode) View.VISIBLE else View.GONE
+            val pencil = v.findViewById<View>(R.id.rename)
+            pencil.visibility = if (editMode) View.VISIBLE else View.GONE
+            pencil.setOnClickListener { renamePart(item) }
             v.findViewById<View>(R.id.handle).setOnTouchListener { _, e ->
                 if (e.actionMasked == MotionEvent.ACTION_DOWN) touchHelper.startDrag(h)
                 true

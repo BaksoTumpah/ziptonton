@@ -548,7 +548,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateTitles() {
         val item = videos.getOrNull(currentIdx) ?: return
-        titleView.text = Fmt.stripExt(item.name)
+        titleView.text = store.displayName(filmKey, item.name)
         partView.text = if (videos.size > 1) getString(R.string.part_of, currentIdx + 1, videos.size) else ""
         partView.visibility = if (videos.size > 1) View.VISIBLE else View.GONE
     }

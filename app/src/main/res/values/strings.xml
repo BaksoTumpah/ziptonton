@@ -118,4 +118,10 @@
     <string name="sync_p01">+0,1</string>
     <string name="sync_p1">+1 dtk</string>
     <string name="sync_done">Selesai</string>
+    <string name="edit">Edit</string>
+    <string name="edit_done">Selesai</string>
+    <string name="rename_title">Ubah nama</string>
+    <string name="rename_part">Ubah nama part</string>
+    <string name="rename_save">Simpan</string>
+    <string name="rename_restore">Nama asli</string>
 </resources>

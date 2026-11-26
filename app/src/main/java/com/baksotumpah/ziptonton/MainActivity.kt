@@ -244,7 +244,7 @@ class MainActivity : AppCompatActivity() {
             val idx = f.entryNames.indexOf(entry)
             val p = store.progress(f.key, entry)
             v.findViewById<TextView>(R.id.heroTitle).text = f.title
-            val partText = if (f.videos.size > 1) getString(R.string.part_of, idx + 1, f.videos.size) else Fmt.stripExt(entry)
+            val partText = if (f.videos.size > 1) getString(R.string.part_of, idx + 1, f.videos.size) else store.displayName(f.key, entry)
             v.findViewById<TextView>(R.id.heroSub).text = if (p != null && !p.finished && p.durationMs > 0)
                 getString(R.string.hero_sub, partText, Fmt.remaining(p.positionMs, p.durationMs).lowercase())
             else partText

@@ -92,6 +92,20 @@ class Store(context: Context) {
         prefs.edit().putString("s|$film", v.toString()).apply()
     }
 
+    // ---- Nama tampilan part yang diubah user (hanya di aplikasi; file di dalam ZIP tidak diubah) ----
+
+    private fun aliasKey(film: String, entry: String) = "n|$film|$entry"
+
+    fun displayName(film: String, entry: String): String =
+        prefs.getString(aliasKey(film, entry), null)?.takeIf { it.isNotBlank() } ?: Fmt.stripExt(entry)
+
+    fun hasAlias(film: String, entry: String) = prefs.contains(aliasKey(film, entry))
+
+    fun setAlias(film: String, entry: String, name: String?) {
+        val clean = name?.replace("\n", " ")?.trim()?.take(120)
+        prefs.edit().apply { if (clean.isNullOrEmpty()) remove(aliasKey(film, entry)) else putString(aliasKey(film, entry), clean) }.apply()
+    }
+
     // ---- Pilihan subtitle per film: "off" atau label track (mis. "Indonesia"); null = belum memilih ----
 
     fun subPref(film: String): String? = prefs.getString("c|$film", null)
@@ -143,7 +157,7 @@ class Store(context: Context) {
 
     // ---- Cadangan & pemulihan ----
 
-    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|", "c|", "d|")
+    private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|", "c|", "d|", "n|")
     private val backupKeys = setOf("last_film", "last_entry")
     private fun backupable(k: String) = k in backupKeys || backupPrefixes.any { k.startsWith(it) }
 
