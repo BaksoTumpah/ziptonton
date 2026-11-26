@@ -139,8 +139,8 @@
     <string name="org_missing">Tidak ada: %1$s</string>
     <string name="org_dups">Ada episode ganda (kualitas berbeda); semuanya ikut masuk</string>
     <string name="org_confirm_title">Mulai merapikan?</string>
-    <string name="org_confirm_msg_delete">%1$d ZIP akan dibuat. Setelah tiap ZIP selesai dan diperiksa, %2$d file asli (%3$s) dihapus permanen. Jangan tutup aplikasi sampai selesai.</string>
-    <string name="org_confirm_msg_keep">%1$d ZIP akan dibuat. File asli tidak dihapus. Jangan tutup aplikasi sampai selesai.</string>
+    <string name="org_confirm_msg_delete">%1$d ZIP akan dibuat. Setelah tiap ZIP selesai dan diperiksa, %2$d file asli (%3$s) dihapus permanen. Proses berjalan di latar belakang.</string>
+    <string name="org_confirm_msg_keep">%1$d ZIP akan dibuat. File asli tidak dihapus. Proses berjalan di latar belakang.</string>
     <string name="org_running">ZIP %1$d dari %2$d: %3$s</string>
     <string name="org_file">%1$s (%2$d%%)</string>
     <string name="org_verifying">Memeriksa ZIP…</string>
@@ -148,4 +148,16 @@
     <string name="org_cancelled">Dibatalkan. %1$d ZIP sudah jadi, %2$d file asli dihapus. ZIP yang belum selesai dibuang dan file aslinya tidak diubah.</string>
     <string name="org_failures">Bermasalah:\n%1$s</string>
     <string name="org_back_busy">Tekan Batal dulu untuk menghentikan</string>
+    <string name="sub_info_file">Subtitle dari file</string>
+    <string name="sub_info_hard">Sub Indonesia sudah di dalam video</string>
+    <string name="sub_info_none">Belum ada subtitle</string>
+    <string name="sub_film_some_none">%1$d dari %2$d part belum ada subtitle</string>
+    <string name="sub_film_mixed">Subtitle ada (file dan di dalam video)</string>
+    <string name="org_channel">Merapikan film</string>
+    <string name="org_notif_start">Menyiapkan…</string>
+    <string name="org_notif_done">Rapikan jadi ZIP selesai</string>
+    <string name="org_notif_cancelled">Rapikan jadi ZIP dibatalkan</string>
+    <string name="org_notif_problems">%1$d bermasalah.</string>
+    <string name="org_back_bg">Proses terus berjalan di latar belakang, lihat notifikasi</string>
+    <string name="org_bg_hint">Proses berjalan di latar belakang. Kamu boleh keluar dari layar ini; progres ada di notifikasi.</string>
 </resources>

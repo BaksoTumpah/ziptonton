@@ -36,6 +36,7 @@ class FilmActivity : AppCompatActivity() {
     private lateinit var uri: Uri
     private var film: Film? = null
     private val parts = mutableListOf<ZipItem>()
+    private var allSubs: List<SubFile> = emptyList()   // untuk keterangan CC
     private val adapter = PartAdapter()
     private lateinit var touchHelper: ItemTouchHelper
     private lateinit var editBtn: TextView
@@ -105,7 +106,9 @@ class FilmActivity : AppCompatActivity() {
 
         io.execute {
             val f = try {
-                val videos = Library.loadVideos(this, uri)
+                val ix = Library.loadIndexed(this, uri)
+                allSubs = Library.subsFor(key) ?: ix.subs
+                val videos = ix.videos
                 val name = key.substringAfterLast('/')
                 Film(key, uri, name.substringBeforeLast('.'), 0L, 0L, videos)
             } catch (_: Exception) { null }
@@ -194,6 +197,7 @@ class FilmActivity : AppCompatActivity() {
             v.findViewById<TextView>(R.id.initial).text = f.title.take(1).uppercase()
             v.findViewById<TextView>(R.id.meta).text =
                 if (names.size > 1) getString(R.string.parts_size, names.size, Fmt.size(totalSize)) else Fmt.size(totalSize)
+            v.findViewById<TextView>(R.id.subInfo).text = SubInfo.forFilm(v.context, Subtitles.states(parts, allSubs, f.uri))
             v.findViewById<SegmentBar>(R.id.bar).setParts(names.map { store.progress(f.key, it)?.fraction ?: 0f })
             val target = store.lastPartOf(f.key, names) ?: names.first()
             val idx = names.indexOf(target)
@@ -220,6 +224,7 @@ class FilmActivity : AppCompatActivity() {
                 p.finished -> getString(R.string.status_done)
                 else -> Fmt.remaining(p.positionMs, p.durationMs)
             }
+            v.findViewById<TextView>(R.id.subInfo).text = SubInfo.forPart(v.context, Subtitles.stateOf(item, allSubs, parts.size, f.uri))
             val dur = v.findViewById<TextView>(R.id.duration)
             dur.visibility = if (p != null && p.durationMs > 0) View.VISIBLE else View.GONE
             dur.text = p?.let { Fmt.time(it.durationMs) }

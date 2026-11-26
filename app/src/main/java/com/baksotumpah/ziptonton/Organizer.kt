@@ -47,7 +47,7 @@ object Organizer {
 
     fun safeName(s: String) = s.replace(Regex("""[\\/:*?"<>|]"""), "").trim()
 
-    private class Parsed(val title: String, val season: Int?, val episode: Int, val quality: String?)
+    private class Parsed(val title: String, val season: Int?, val episode: Int, val quality: String?, val tag: String?)
 
     private fun parse(fileName: String): Parsed? {
         val base = fileName.substringBeforeLast('.')
@@ -70,15 +70,19 @@ object Organizer {
         }
         val tokens = prefix.split(SPLIT).filter { it.isNotEmpty() }.toMutableList()
         var quality: String? = null
+        var tag: String? = null
         while (tokens.isNotEmpty()) {
             val t = tokens.last()
             if (QUALITY.matches(t)) { if (quality == null) quality = t.uppercase(); tokens.removeAt(tokens.size - 1) }
-            else if (t.startsWith("[") || t.startsWith("(") || t.endsWith("]") || t.endsWith(")") || t == "-") tokens.removeAt(tokens.size - 1)
+            else if (t.startsWith("[") || t.startsWith("(") || t.endsWith("]") || t.endsWith(")") || t == "-") {
+                if (tag == null && t.startsWith("[") && t.endsWith("]")) tag = t   // mis. [Indonesian] = subtitle tertulis di video
+                tokens.removeAt(tokens.size - 1)
+            }
             else break
         }
         if (tokens.isEmpty()) return null
         if (quality == null) quality = QUALITY.find(suffix)?.value?.uppercase()
-        return Parsed(tokens.joinToString(" "), season, ep, quality)
+        return Parsed(tokens.joinToString(" "), season, ep, quality, tag)
     }
 
     /** Kelompokkan file video per judul + musim berdasarkan nama file. File yang polanya tidak dikenali dilewati. */
@@ -97,7 +101,8 @@ object Organizer {
             val items = list.sortedWith(compareBy({ it.second.episode }, { it.first.name })).map { (f, p) ->
                 val ext = f.name.substringAfterLast('.', "mp4").lowercase()
                 var name = (if (season != null) "$title S${pad(season)}E${pad(p.episode)}" else "$title E${pad(p.episode)}") +
-                    (if (p.quality != null) " ${p.quality}" else "")
+                    (if (p.quality != null) " ${p.quality}" else "") +
+                    (if (p.tag != null) " ${p.tag}" else "")
                 val n = (used[name] ?: 0) + 1
                 used[name] = n
                 if (n > 1) name += " ($n)"

@@ -19,7 +19,21 @@ data class SubFile(
     val global: Boolean = false
 )
 
+enum class SubState { FILE, HARD, NONE }
+
 object Subtitles {
+    /** Nama file memuat [Indonesian] / [Indo] = subtitle sudah tertulis di dalam video (hardsub). */
+    private val HARD_TAG = Regex("""\[(?:indonesian|indonesia|indo)\]""", RegexOption.IGNORE_CASE)
+
+    fun stateOf(video: ZipItem, subs: List<SubFile>, videoCount: Int, zip: Uri): SubState = when {
+        forVideo(video, subs, videoCount, zip).isNotEmpty() -> SubState.FILE
+        HARD_TAG.containsMatchIn(video.name) -> SubState.HARD
+        else -> SubState.NONE
+    }
+
+    fun states(videos: List<ZipItem>, subs: List<SubFile>, zip: Uri): List<SubState> =
+        videos.map { stateOf(it, subs, videos.size, zip) }
+
     const val MAX_SIZE = 5L * 1024 * 1024   // subtitle normal cuma puluhan-ratusan KB
 
     private val MIME = mapOf(

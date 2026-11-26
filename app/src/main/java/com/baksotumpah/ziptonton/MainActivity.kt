@@ -273,6 +273,7 @@ class MainActivity : AppCompatActivity() {
                 names.size > 1 -> getString(R.string.parts_size, names.size, Fmt.size(f.size))
                 else -> Fmt.size(f.size)
             }
+            v.findViewById<TextView>(R.id.subInfo).text = SubInfo.forFilm(v.context, Subtitles.states(f.videos, f.subs, f.uri))
             val bar = v.findViewById<SegmentBar>(R.id.bar)
             bar.visibility = if (prog.any { it?.started == true }) View.VISIBLE else View.GONE
             bar.setParts(prog.map { it?.fraction ?: 0f })

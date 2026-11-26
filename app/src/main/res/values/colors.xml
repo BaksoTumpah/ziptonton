@@ -12,4 +12,7 @@
     <color name="segment_track">#3A414C</color>
     <color name="scrim_player">#8C000000</color>
     <color name="ic_bg">#F4B740</color>
+    <color name="sub_file">#58C27D</color>
+    <color name="sub_hard">#6AA6FF</color>
+    <color name="sub_none">#FFA270</color>
 </resources>

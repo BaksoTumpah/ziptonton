@@ -1,12 +1,14 @@
 package com.baksotumpah.ziptonton
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -14,24 +16,23 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Rapikan folder berisi film yang bercampur: kelompokkan per judul + musim, satu ZIP per kelompok
  * (tanpa kompresi), periksa ZIP-nya, lalu (opsional) hapus file aslinya.
+ * Prosesnya dijalankan OrganizeService di latar belakang; layar ini hanya menampilkan statusnya.
  */
 class OrganizeActivity : AppCompatActivity() {
 
     private var tree: Uri? = null
     private val groups = mutableListOf<Group>()
     private var skipped = 0
-    private var running = false
-    private val cancelFlag = AtomicBoolean(false)
     private val io = Executors.newSingleThreadExecutor()
     private val adapter = GroupAdapter()
 
@@ -46,6 +47,8 @@ class OrganizeActivity : AppCompatActivity() {
     private val pick = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) scan(uri)
     }
+
+    private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,18 +66,66 @@ class OrganizeActivity : AppCompatActivity() {
         }
         primary.setOnClickListener {
             when {
-                running -> {}
+                OrganizeState.running -> {}
                 groups.isEmpty() -> pick.launch(null)
                 else -> confirmStart()
             }
         }
-        cancelBtn.setOnClickListener { cancelFlag.set(true); cancelBtn.isEnabled = false }
+        cancelBtn.setOnClickListener { OrganizeState.cancel.set(true); cancelBtn.isEnabled = false }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (running) Toast.makeText(this@OrganizeActivity, R.string.org_back_busy, Toast.LENGTH_SHORT).show()
-                else finish()
+                if (OrganizeState.running) Toast.makeText(this@OrganizeActivity, R.string.org_back_bg, Toast.LENGTH_SHORT).show()
+                finish()
             }
         })
+    }
+
+    override fun onStart() {
+        super.onStart()
+        OrganizeState.onChange = { runOnUiThread { render() } }
+        render()
+    }
+
+    override fun onStop() {
+        OrganizeState.onChange = null
+        super.onStop()
+    }
+
+    /** Selaraskan tampilan dengan status layanan (berjalan / hasil akhir). */
+    private fun render() {
+        val st = OrganizeState
+        if (st.running) {
+            showRunningUi()
+            status.text = st.status
+            fileLine.text = st.fileLine
+            bar.progress = st.progress
+            return
+        }
+        val r = st.result ?: return
+        st.result = null   // hasil hanya ditampilkan sekali
+        cancelBtn.visibility = View.GONE
+        bar.visibility = View.GONE
+        status.visibility = View.VISIBLE
+        fileLine.visibility = View.VISIBLE
+        status.text = getString(if (r.cancelled) R.string.org_cancelled else R.string.org_done, r.zipsMade, r.originalsDeleted)
+        fileLine.text = if (r.failures.isEmpty()) "" else getString(R.string.org_failures, r.failures.joinToString("\n"))
+        groups.clear()
+        adapter.notifyDataSetChanged()
+        primary.visibility = View.VISIBLE
+        primary.isEnabled = true
+        primary.setText(R.string.edit_done)
+        primary.setOnClickListener { finish() }
+    }
+
+    private fun showRunningUi() {
+        primary.visibility = View.GONE
+        cancelBtn.visibility = View.VISIBLE
+        cancelBtn.isEnabled = !OrganizeState.cancel.get()
+        deleteBox.visibility = View.GONE
+        status.visibility = View.VISIBLE
+        fileLine.visibility = View.VISIBLE
+        bar.visibility = View.VISIBLE
+        info.setText(R.string.org_bg_hint)
     }
 
     private fun scan(uri: Uri) {
@@ -83,8 +134,7 @@ class OrganizeActivity : AppCompatActivity() {
         primary.isEnabled = false
         io.execute {
             val result = try {
-                val files = Organizer.listVideos(this, uri)
-                Organizer.plan(files)
+                Organizer.plan(Organizer.listVideos(this, uri))
             } catch (_: Exception) { null }
             runOnUiThread {
                 primary.isEnabled = true
@@ -136,74 +186,28 @@ class OrganizeActivity : AppCompatActivity() {
             .show()
     }
 
-    private val listener = object : Organizer.Listener {
-        private var lastUi = 0L
-
-        override fun onGroup(index: Int, total: Int, group: Group) {
-            runOnUiThread { status.text = getString(R.string.org_running, index, total, group.zipName) }
-        }
-
-        override fun onProgress(file: String, fileDone: Long, fileSize: Long, doneAll: Long, totalAll: Long) {
-            val now = SystemClock.uptimeMillis()
-            if (now - lastUi < 250) return
-            lastUi = now
-            val pct = if (fileSize > 0) (fileDone * 100 / fileSize).toInt() else 0
-            val overall = if (totalAll > 0) (doneAll * 1000 / totalAll).toInt() else 0
-            runOnUiThread {
-                fileLine.text = getString(R.string.org_file, file, pct)
-                bar.progress = overall
-            }
-        }
-
-        override fun onStatus(text: String) {
-            runOnUiThread { fileLine.setText(R.string.org_verifying) }
-        }
-
-        override fun cancelled() = cancelFlag.get()
-    }
-
     private fun start(sel: List<Group>, deleteOriginals: Boolean) {
         val t = tree ?: return
-        running = true
-        cancelFlag.set(false)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        primary.visibility = View.GONE
-        cancelBtn.visibility = View.VISIBLE
-        cancelBtn.isEnabled = true
-        deleteBox.visibility = View.GONE
-        status.visibility = View.VISIBLE
-        fileLine.visibility = View.VISIBLE
-        bar.visibility = View.VISIBLE
+        // Izin folder dipertahankan selama proses latar belakang berjalan; izin tulis dilepas setelah selesai.
+        try {
+            contentResolver.takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (_: Exception) {}
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        OrganizeState.cancel.set(false)
+        OrganizeState.pending = OrganizeState.Job(t, sel, deleteOriginals)
+        ContextCompat.startForegroundService(this, Intent(this, OrganizeService::class.java))
+        showRunningUi()
+        status.text = getString(R.string.org_notif_start)
+        fileLine.text = ""
         bar.progress = 0
         adapter.notifyDataSetChanged()
-        io.execute {
-            val res = try {
-                Organizer.run(this@OrganizeActivity, t, sel, deleteOriginals, listener)
-            } catch (e: Exception) {
-                RunResult(0, 0, listOf(e.message ?: e.javaClass.simpleName), false)
-            }
-            runOnUiThread { finishRun(res) }
-        }
-    }
-
-    private fun finishRun(r: RunResult) {
-        running = false
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        cancelBtn.visibility = View.GONE
-        bar.visibility = View.GONE
-        status.text = getString(if (r.cancelled) R.string.org_cancelled else R.string.org_done, r.zipsMade, r.originalsDeleted)
-        fileLine.text = if (r.failures.isEmpty()) "" else getString(R.string.org_failures, r.failures.joinToString("\n"))
-        groups.clear()
-        adapter.notifyDataSetChanged()
-        primary.visibility = View.VISIBLE
-        primary.isEnabled = true
-        primary.setText(R.string.edit_done)
-        primary.setOnClickListener { finish() }
     }
 
     override fun onDestroy() {
-        cancelFlag.set(true)
-        io.shutdown()
+        io.shutdown()   // proses latar belakang tidak ikut berhenti
         super.onDestroy()
     }
 
@@ -221,9 +225,9 @@ class OrganizeActivity : AppCompatActivity() {
             v.findViewById<TextView>(R.id.meta).text = describe(g)
             check.setOnCheckedChangeListener(null)
             check.isChecked = g.selected
-            check.isEnabled = !running
+            check.isEnabled = !OrganizeState.running
             check.setOnCheckedChangeListener { _, c -> g.selected = c; updateSummary() }
-            v.setOnClickListener { if (!running) check.toggle() }
+            v.setOnClickListener { if (!OrganizeState.running) check.toggle() }
         }
     }
 }
