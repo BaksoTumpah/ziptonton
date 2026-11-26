@@ -75,4 +75,5 @@ jobs:
           CHANGELOG: ${{ github.event.head_commit.message }}
           APKSWIFT_USER: ${{ secrets.APKSWIFT_USER }}
           APKSWIFT_PASS: ${{ secrets.APKSWIFT_PASS }}
+          APKSWIFT_DEPLOY_TOKEN: ${{ secrets.APKSWIFT_DEPLOY_TOKEN }}
         run: node .github/scripts/publish-apkswift.mjs

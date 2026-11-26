@@ -6,7 +6,8 @@
  *
  * Env wajib : APK_PATH, TAG, BUILD_NUMBER, REPO (BaksoTumpah/ziptonton)
  * Env rahasia: APKSWIFT_USER, APKSWIFT_PASS (akun developer ApkSwift). Kalau kosong, langkah dilewati.
- * Env opsional: ICON_PATH (WebP/PNG 144px, default .github/apkswift-icon.webp), CHANGELOG, APP_NAME, APP_DESC, APP_CAT, VERSION_NAME, APKSWIFT_REFERER,
+ * Env opsional: APKSWIFT_DEPLOY_TOKEN (PAT dengan izin Actions: write di repo ApkSwift; memicu pembuatan ulang situs),
+ *               ICON_PATH (WebP/PNG 144px, default .github/apkswift-icon.webp), CHANGELOG, APP_NAME, APP_DESC, APP_CAT, VERSION_NAME, APKSWIFT_REFERER,
  *               IDENTITY_BASE / FIRESTORE_BASE (untuk uji lokal)
  */
 import { readFileSync, statSync, existsSync } from "node:fs";
@@ -22,6 +23,9 @@ const IDENTITY = env("IDENTITY_BASE", "https://identitytoolkit.googleapis.com");
 const FIRESTORE = env("FIRESTORE_BASE", "https://firestore.googleapis.com");
 const PKG = "com.baksotumpah.ziptonton";
 const APP_ID = PKG.toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^-+|-+$/g, "");   // sama dengan slug() di panel developer
+const GH_API = env("GITHUB_API_BASE", "https://api.github.com");
+const SITE_REPO = env("APKSWIFT_REPO", "BaksoTumpah/ApkSwift");
+const SITE_WORKFLOW = env("APKSWIFT_WORKFLOW", "firebase-hosting-merge.yml");
 const MAX_VERSIONS = 100;   // aturan Firestore: maksimal 200
 
 const user = env("APKSWIFT_USER"), pass = env("APKSWIFT_PASS");
@@ -75,6 +79,30 @@ const encEntry = (x) => ({ mapValue: { fields: { v: S(x.v), url: S(x.url), size:
 const decStr = (f, k) => (f && f[k] && f[k].stringValue) || "";
 const decEntry = (m) => { const f = (m.mapValue && m.mapValue.fields) || {}; return { v: decStr(f, "v"), url: decStr(f, "url"), size: decStr(f, "size"), log: decStr(f, "log"), date: decStr(f, "date") }; };
 
+/*
+ * Situs publik ApkSwift adalah halaman statis yang dibuat ulang dari Firestore oleh workflow terjadwal di repo ApkSwift.
+ * Jadwal GitHub sering telat berjam-jam, jadi tanpa langkah ini versi baru sudah tampil di panel developer (membaca
+ * Firestore langsung) tetapi belum di halaman unduh biasa. Di sini workflow situs dipicu langsung setelah data ditulis.
+ */
+async function triggerSiteBuild() {
+  const tok = env("APKSWIFT_DEPLOY_TOKEN");
+  if (!tok) {
+    console.log("::notice::APKSWIFT_DEPLOY_TOKEN belum diisi: halaman unduh ApkSwift baru ter-update saat jadwal build situs berjalan (bisa berjam-jam).");
+    return;
+  }
+  try {
+    const r = await fetch(`${GH_API}/repos/${SITE_REPO}/actions/workflows/${SITE_WORKFLOW}/dispatches`, {
+      method: "POST",
+      headers: { authorization: "Bearer " + tok, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "ziptonton-ci", "content-type": "application/json" },
+      body: JSON.stringify({ ref: "main" }),
+    });
+    if (r.status === 204) console.log("Build situs ApkSwift dipicu, halaman unduh ter-update dalam beberapa menit.");
+    else console.log(`::warning::Gagal memicu build situs ApkSwift (HTTP ${r.status}). Pastikan token punya izin Actions: Read and write di repo ${SITE_REPO}.`);
+  } catch (e) {
+    console.log("::warning::Gagal memicu build situs ApkSwift: " + String(e.message).slice(0, 200));
+  }
+}
+
 async function main() {
   // 1. Masuk sebagai akun developer (kata sandi di Firebase = "namapengguna|katasandi", sama dengan panel developer)
   const login = await http("POST", `${IDENTITY}/v1/accounts:signInWithPassword?key=${API_KEY}`,
@@ -113,6 +141,7 @@ async function main() {
   const q = mask.map((m) => "updateMask.fieldPaths=" + m).join("&");
   await http("PATCH", `${docUrl}?${q}`, { fields }, auth);
 
+  await triggerSiteBuild();
   console.log(`ApkSwift: ${exists ? "diperbarui" : "aplikasi baru dibuat"} -> ${versionLabel}, ${entry.size}, ${versions.length} versi tercatat${iconSet ? ", logo diunggah" : ""}`);
 }
 
