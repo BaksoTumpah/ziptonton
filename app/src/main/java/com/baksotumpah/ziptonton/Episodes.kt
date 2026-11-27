@@ -10,7 +10,7 @@ import androidx.core.content.ContextCompat
 
 /**
  * Deteksi episode yang terlewat dari nomor di nama file (S01_E01, S01E01, E01, Ep01).
- * Yang dihitung "terlewat" adalah nomor di antara episode terkecil dan terbesar yang ada di tiap musim.
+ * Yang dihitung "terlewat" adalah semua nomor dari episode 1 sampai episode terbesar yang ada di tiap musim.
  */
 object Episodes {
     private val SE = Regex("""[Ss](\d{1,2})[ ._-]?[Ee](\d{1,3})""")
@@ -35,9 +35,8 @@ object Episodes {
         }
         val out = ArrayList<Gap>()
         for ((season, eps) in bySeason) {
-            val lo = eps.first()
             val hi = eps.last()
-            val missing = (lo..hi).filter { it !in eps }
+            val missing = (1..hi).filter { it !in eps }
             if (missing.isNotEmpty()) out += Gap(season, missing)
         }
         return out
