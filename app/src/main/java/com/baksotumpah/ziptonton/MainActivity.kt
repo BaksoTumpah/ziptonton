@@ -115,6 +115,42 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    /** Pindahkan ZIP lama yang belum bersubtitle ke ZipTonton/<judul>/ (setelah konfirmasi). */
+    private fun tidyOldZips() {
+        if (!StorageAccess.hasAccess(this)) { requestStorage(); return }
+        val root = StorageAccess.dir()
+        if (!root.isDirectory) { Toast.makeText(this, R.string.tidy_none, Toast.LENGTH_SHORT).show(); return }
+        Toast.makeText(this, R.string.tidy_checking, Toast.LENGTH_SHORT).show()
+        io.execute {
+            val moves = try { Tidy.plan(this, root) } catch (_: Exception) { emptyList() }
+            runOnUiThread {
+                if (moves.isEmpty()) {
+                    Toast.makeText(this, R.string.tidy_none, Toast.LENGTH_LONG).show()
+                } else {
+                    val preview = moves.take(6).joinToString("\n") { it.from.name + " → " + it.folder + "/" } +
+                        if (moves.size > 6) "\n…" else ""
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.tidy_title)
+                        .setMessage(getString(R.string.tidy_msg, moves.size, preview))
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.tidy_do) { _, _ ->
+                            io.execute {
+                                val (n, problems) = Tidy.apply(root, moves, store)
+                                runOnUiThread {
+                                    var msg = getString(R.string.tidy_done, n)
+                                    if (problems.isNotEmpty()) msg += ". " + getString(R.string.tidy_problems, problems.size)
+                                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                                    films = emptyList()
+                                    onResume()
+                                }
+                            }
+                        }
+                        .show()
+                }
+            }
+        }
+    }
+
     private fun showSettings(anchor: View) {
         val me = this
         PopupMenu(me, anchor).apply {
@@ -124,6 +160,7 @@ class MainActivity : AppCompatActivity() {
             menu.add(0, 3, 3, R.string.menu_restore)
             menu.add(0, 4, 4, R.string.menu_organize)
             menu.add(0, 5, 5, R.string.menu_zt_folder)
+            menu.add(0, 6, 6, R.string.menu_tidy)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> Updater.checkNow(me)
@@ -131,6 +168,7 @@ class MainActivity : AppCompatActivity() {
                     3 -> openBackup.launch(arrayOf("*/*"))
                     4 -> startActivity(Intent(me, OrganizeActivity::class.java))
                     5 -> useZipTontonFolder()
+                    6 -> tidyOldZips()
                 }
                 true
             }

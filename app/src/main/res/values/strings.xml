@@ -173,4 +173,12 @@
     <string name="eps_more">dan %1$d lainnya</string>
     <string name="org_dest_folder">Belum ada subtitle → disimpan di ZipTonton/%1$s/</string>
     <string name="org_dest_root">Subtitle bawaan → disimpan di ZipTonton/</string>
+    <string name="menu_tidy">Rapikan ZIP lama</string>
+    <string name="tidy_title">Rapikan ZIP lama</string>
+    <string name="tidy_msg">%1$d ZIP belum ada subtitle akan dipindah ke folder judulnya di ZipTonton:\n%2$s\n\nProgres tontonan dan pengaturan ikut terbawa.</string>
+    <string name="tidy_do">Pindahkan</string>
+    <string name="tidy_none">Tidak ada ZIP lama yang perlu dipindah</string>
+    <string name="tidy_done">%1$d ZIP dipindah</string>
+    <string name="tidy_problems">%1$d ZIP gagal dipindah</string>
+    <string name="tidy_checking">Memeriksa folder ZipTonton…</string>
 </resources>

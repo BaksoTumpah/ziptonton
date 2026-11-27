@@ -155,6 +155,28 @@ class Store(context: Context) {
         prefs.edit().apply { if (v) putString("h|$film", "1") else remove("h|$film") }.apply()
     }
 
+    /** Pindahkan semua data satu film (progres, urutan, nama, kecepatan, subtitle, intro) ke kunci baru, mis. saat ZIP dipindah folder. */
+    fun renameFilm(old: String, new: String) {
+        val e = prefs.edit()
+        val prefixes = listOf("p|", "o|", "s|", "n|", "c|", "d|", "i|", "h|")
+        for ((k, v) in prefs.all) {
+            val pre = prefixes.firstOrNull { k.startsWith(it) } ?: continue
+            val rest = k.substring(pre.length)
+            if (rest != old && !rest.startsWith("$old|")) continue
+            val nk = pre + new + rest.substring(old.length)
+            e.remove(k)
+            when (v) {
+                is String -> e.putString(nk, v)
+                is Int -> e.putInt(nk, v)
+                is Long -> e.putLong(nk, v)
+                is Float -> e.putFloat(nk, v)
+                is Boolean -> e.putBoolean(nk, v)
+            }
+        }
+        if (prefs.getString("last_film", null) == old) e.putString("last_film", new)
+        e.apply()
+    }
+
     // ---- Cadangan & pemulihan ----
 
     private val backupPrefixes = listOf("p|", "o|", "s|", "i|", "h|", "c|", "d|", "n|")
