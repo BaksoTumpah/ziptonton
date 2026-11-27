@@ -334,6 +334,11 @@ class MainActivity : AppCompatActivity() {
                 else -> Fmt.size(f.size)
             }
             v.findViewById<TextView>(R.id.subInfo).text = SubInfo.forFilm(v.context, Subtitles.states(f.videos, f.subs, f.uri))
+            val eps = Episodes.describe(v.context, f.videos.map { it.name })
+            val epsView = v.findViewById<TextView>(R.id.epsInfo)
+            epsView.text = eps ?: ""
+            epsView.visibility = if (eps == null) View.GONE else View.VISIBLE
+            v.findViewById<View>(R.id.missingBadge).visibility = if (eps == null) View.GONE else View.VISIBLE
             val bar = v.findViewById<SegmentBar>(R.id.bar)
             bar.visibility = if (prog.any { it?.started == true }) View.VISIBLE else View.GONE
             bar.setParts(prog.map { it?.fraction ?: 0f })

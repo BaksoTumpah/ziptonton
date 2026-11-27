@@ -198,6 +198,10 @@ class FilmActivity : AppCompatActivity() {
             v.findViewById<TextView>(R.id.meta).text =
                 if (names.size > 1) getString(R.string.parts_size, names.size, Fmt.size(totalSize)) else Fmt.size(totalSize)
             v.findViewById<TextView>(R.id.subInfo).text = SubInfo.forFilm(v.context, Subtitles.states(parts, allSubs, f.uri))
+            val eps = Episodes.describe(v.context, parts.map { it.name })
+            val epsView = v.findViewById<TextView>(R.id.epsInfo)
+            epsView.text = eps ?: ""
+            epsView.visibility = if (eps == null) View.GONE else View.VISIBLE
             v.findViewById<SegmentBar>(R.id.bar).setParts(names.map { store.progress(f.key, it)?.fraction ?: 0f })
             val target = store.lastPartOf(f.key, names) ?: names.first()
             val idx = names.indexOf(target)

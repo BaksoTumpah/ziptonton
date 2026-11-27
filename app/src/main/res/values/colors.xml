@@ -15,4 +15,5 @@
     <color name="sub_file">#58C27D</color>
     <color name="sub_hard">#6AA6FF</color>
     <color name="sub_none">#FFA270</color>
+    <color name="eps_warn">#FFC24B</color>
 </resources>

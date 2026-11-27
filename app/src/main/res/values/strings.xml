@@ -167,4 +167,8 @@
     <string name="storage_failed">Tidak bisa membuat folder ZipTonton</string>
     <string name="menu_zt_folder">Pakai folder ZipTonton</string>
     <string name="org_need_storage">Untuk menyimpan ZIP di folder ZipTonton, aplikasi butuh izin akses file. Izinkan dulu, lalu tekan Mulai lagi.</string>
+    <string name="eps_missing">⚠ Eps %1$s belum terdownload</string>
+    <string name="eps_badge">Eps kurang</string>
+    <string name="eps_and">dan</string>
+    <string name="eps_more">dan %1$d lainnya</string>
 </resources>
