@@ -171,4 +171,6 @@
     <string name="eps_badge">Eps kurang</string>
     <string name="eps_and">dan</string>
     <string name="eps_more">dan %1$d lainnya</string>
+    <string name="org_dest_folder">Belum ada subtitle → disimpan di ZipTonton/%1$s/</string>
+    <string name="org_dest_root">Subtitle bawaan → disimpan di ZipTonton/</string>
 </resources>

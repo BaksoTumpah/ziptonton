@@ -25,6 +25,8 @@ object Subtitles {
     /** Nama file memuat [Indonesian] / [Indo] = subtitle sudah tertulis di dalam video (hardsub). */
     private val HARD_TAG = Regex("""\[(?:indonesian|indonesia|indo)\]""", RegexOption.IGNORE_CASE)
 
+    fun hasHardTag(name: String) = HARD_TAG.containsMatchIn(name)
+
     fun stateOf(video: ZipItem, subs: List<SubFile>, videoCount: Int, zip: Uri): SubState = when {
         forVideo(video, subs, videoCount, zip).isNotEmpty() -> SubState.FILE
         HARD_TAG.containsMatchIn(video.name) -> SubState.HARD

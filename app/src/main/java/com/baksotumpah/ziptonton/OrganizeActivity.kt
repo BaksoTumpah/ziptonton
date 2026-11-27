@@ -168,6 +168,7 @@ class OrganizeActivity : AppCompatActivity() {
         if (eps.isNotEmpty()) s += " · E" + Organizer.pad(eps.first()) + "–E" + Organizer.pad(eps.last())
         if (g.missing.isNotEmpty()) s += "\n" + getString(R.string.org_missing, g.missing.joinToString(", ") { "E" + Organizer.pad(it) })
         if (g.hasDuplicates) s += "\n" + getString(R.string.org_dups)
+        s += "\n" + if (g.needsSubtitles) getString(R.string.org_dest_folder, g.folderName) else getString(R.string.org_dest_root)
         return s
     }
 

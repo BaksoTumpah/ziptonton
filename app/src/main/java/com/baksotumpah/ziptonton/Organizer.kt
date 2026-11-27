@@ -22,6 +22,12 @@ class Group(val title: String, val season: Int?, val items: List<PlanItem>) {
     val zipName: String get() = Organizer.safeName(if (season != null) "$title S${Organizer.pad(season)}" else title) + ".zip"
     val totalSize: Long get() = items.sumOf { it.src.size }
 
+    /** True kalau ada episode tanpa tag [Indonesian] (subtitle belum ada): ZIP-nya masuk ke ZipTonton/<judul>/. */
+    val needsSubtitles: Boolean get() = items.any { !Subtitles.hasHardTag(it.entryName) }
+
+    /** Nama subfolder untuk film yang belum bersubtitle. */
+    val folderName: String get() = Organizer.safeName(title).ifEmpty { "Film" }
+
     /** Nomor episode yang tidak ada di antara yang terkecil dan terbesar (mis. E11 hilang). */
     val missing: List<Int>
         get() {
@@ -150,8 +156,6 @@ object Organizer {
      */
     fun run(context: Context, groups: List<Group>, outDir: File, deleteOriginals: Boolean, l: Listener): RunResult {
         val cr = context.contentResolver
-        val names = HashSet<String>()
-        outDir.list()?.forEach { names += it.lowercase() }
         val failures = ArrayList<String>()
         var made = 0
         var deleted = 0
@@ -162,15 +166,20 @@ object Organizer {
             if (l.cancelled()) return RunResult(made, deleted, failures, true)
             l.onGroup(gi + 1, groups.size, g)
             val groupStart = done
-
-            var zipName = g.zipName
-            var k = 2
-            while (zipName.lowercase() in names) { zipName = g.zipName.removeSuffix(".zip") + " ($k).zip"; k++ }
-
-            val part = File(outDir, "$zipName.part")
+            var part: File? = null
             try {
+                // Film yang belum bersubtitle masuk ke folder sendiri (ZipTonton/<judul>/) supaya subtitle bisa ditambah manual
+                val dir = if (g.needsSubtitles) File(outDir, g.folderName) else outDir
+                if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) throw IllegalStateException("Tidak bisa membuat folder ${dir.name}")
+
+                var zipName = g.zipName
+                var k = 2
+                while (File(dir, zipName).exists()) { zipName = g.zipName.removeSuffix(".zip") + " ($k).zip"; k++ }
+
+                val pf = File(dir, "$zipName.part")
+                part = pf
                 val written = ArrayList<ZipWriter.Entry>()
-                RandomAccessFile(part, "rw").use { raf ->
+                RandomAccessFile(pf, "rw").use { raf ->
                     raf.setLength(0)
                     val ch = raf.channel
                     val w = ZipWriter(ch)
@@ -191,10 +200,10 @@ object Organizer {
                 }
 
                 l.onStatus("verify")
-                if (!verify(part, written, l)) throw IllegalStateException("Pemeriksaan ZIP gagal")
+                if (!verify(pf, written, l)) throw IllegalStateException("Pemeriksaan ZIP gagal")
 
-                if (!part.renameTo(File(outDir, zipName))) throw IllegalStateException("Tidak bisa memberi nama akhir pada ZIP")
-                names += zipName.lowercase()
+                if (!pf.renameTo(File(dir, zipName))) throw IllegalStateException("Tidak bisa memberi nama akhir pada ZIP")
+                part = null
                 made++
 
                 if (deleteOriginals) {
@@ -204,10 +213,10 @@ object Organizer {
                     }
                 }
             } catch (_: CancelledException) {
-                part.delete()
+                part?.delete()
                 return RunResult(made, deleted, failures, true)
             } catch (e: Exception) {
-                part.delete()
+                part?.delete()
                 failures += "${g.zipName}: ${e.message ?: e.javaClass.simpleName} (file asli tidak diubah)"
                 done = groupStart + g.totalSize
             }
