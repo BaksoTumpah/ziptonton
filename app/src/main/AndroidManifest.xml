@@ -2,11 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      Tidak ada izin penyimpanan umum. Aplikasi hanya membaca SATU folder
-      yang dipilih user lewat pemilih folder sistem (izin baca saja).
+      Akses penyimpanan: dipakai untuk membuat/membaca folder ZipTonton di penyimpanan perangkat
+      dan memindahkan ZIP hasil "Rapikan jadi ZIP" ke sana (Android 11+: "Akses semua file";
+      Android 10 ke bawah: izin penyimpanan biasa). Folder lain tetap bisa dipilih lewat pemilih folder sistem.
       INTERNET + REQUEST_INSTALL_PACKAGES hanya dipakai untuk memeriksa dan
       memasang pembaruan dari GitHub Releases.
     -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Rapikan jadi ZIP berjalan sebagai layanan latar belakang dengan notifikasi progres -->
@@ -17,6 +21,7 @@
 
     <application
         android:allowBackup="true"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"

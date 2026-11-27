@@ -186,8 +186,26 @@ class OrganizeActivity : AppCompatActivity() {
             .show()
     }
 
+    private val storagePerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+
+    private fun askStorage() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.storage_title)
+            .setMessage(R.string.org_need_storage)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.storage_allow) { _, _ ->
+                val i = StorageAccess.settingsIntent(this)
+                if (i != null) try { startActivity(i) } catch (_: Exception) {}
+                else storagePerms.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
+            }
+            .show()
+    }
+
     private fun start(sel: List<Group>, deleteOriginals: Boolean) {
         val t = tree ?: return
+        if (!StorageAccess.hasAccess(this)) { askStorage(); return }
+        val outDir = StorageAccess.ensureDir()
+        if (outDir == null) { Toast.makeText(this, R.string.storage_failed, Toast.LENGTH_LONG).show(); return }
         // Izin folder dipertahankan selama proses latar belakang berjalan; izin tulis dilepas setelah selesai.
         try {
             contentResolver.takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -197,7 +215,7 @@ class OrganizeActivity : AppCompatActivity() {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         OrganizeState.cancel.set(false)
-        OrganizeState.pending = OrganizeState.Job(t, sel, deleteOriginals)
+        OrganizeState.pending = OrganizeState.Job(t, sel, deleteOriginals, outDir)
         ContextCompat.startForegroundService(this, Intent(this, OrganizeService::class.java))
         showRunningUi()
         status.text = getString(R.string.org_notif_start)

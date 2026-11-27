@@ -3,8 +3,9 @@ package com.baksotumpah.ziptonton
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.zip.CRC32
@@ -134,16 +135,6 @@ object Organizer {
         return out
     }
 
-    private fun existingNames(context: Context, tree: Uri): MutableSet<String> {
-        val rootId = DocumentsContract.getTreeDocumentId(tree)
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, rootId)
-        val names = HashSet<String>()
-        context.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
-            while (c.moveToNext()) c.getString(0)?.let { names += it.lowercase() }
-        }
-        return names
-    }
-
     interface Listener {
         fun onGroup(index: Int, total: Int, group: Group)
         fun onProgress(file: String, fileDone: Long, fileSize: Long, doneAll: Long, totalAll: Long)
@@ -152,14 +143,15 @@ object Organizer {
     }
 
     /**
-     * Buat satu ZIP per grup. File asli baru dihapus setelah ZIP selesai, diberi nama final,
+     * Buat satu ZIP per grup langsung di [outDir] (folder ZipTonton), jadi langsung terbaca di aplikasi.
+     * File asli (di folder sumber) baru dihapus setelah ZIP selesai, diberi nama final,
      * dan diperiksa ulang (jumlah file, ukuran, dan CRC32 dibaca ulang dari ZIP).
      * Kalau ada langkah yang gagal atau dibatalkan, file asli tidak disentuh.
      */
-    fun run(context: Context, tree: Uri, groups: List<Group>, deleteOriginals: Boolean, l: Listener): RunResult {
+    fun run(context: Context, groups: List<Group>, outDir: File, deleteOriginals: Boolean, l: Listener): RunResult {
         val cr = context.contentResolver
-        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        val names = existingNames(context, tree)
+        val names = HashSet<String>()
+        outDir.list()?.forEach { names += it.lowercase() }
         val failures = ArrayList<String>()
         var made = 0
         var deleted = 0
@@ -175,38 +167,33 @@ object Organizer {
             var k = 2
             while (zipName.lowercase() in names) { zipName = g.zipName.removeSuffix(".zip") + " ($k).zip"; k++ }
 
-            var part: Uri? = null
+            val part = File(outDir, "$zipName.part")
             try {
-                part = DocumentsContract.createDocument(cr, parent, "application/octet-stream", "$zipName.part")
-                    ?: throw IllegalStateException("Tidak bisa membuat file ZIP di folder")
                 val written = ArrayList<ZipWriter.Entry>()
-                cr.openFileDescriptor(part, "rw").use { pfd ->
-                    if (pfd == null) throw IllegalStateException("Tidak bisa membuka file ZIP untuk ditulis")
-                    FileOutputStream(pfd.fileDescriptor).channel.use { ch ->
-                        val w = ZipWriter(ch)
-                        for (pi in g.items) {
-                            val input = cr.openInputStream(pi.src.uri) ?: throw IllegalStateException("Tidak bisa membaca ${pi.src.name}")
-                            var fileDone = 0L
-                            val e = input.use { ins ->
-                                w.add(pi.entryName, pi.src.size, ins, { n ->
-                                    fileDone += n; done += n
-                                    l.onProgress(pi.src.name, fileDone, pi.src.size, done, total)
-                                }, { l.cancelled() })
-                            }
-                            if (e == null) throw CancelledException()   // dibatalkan
-                            written += e
+                RandomAccessFile(part, "rw").use { raf ->
+                    raf.setLength(0)
+                    val ch = raf.channel
+                    val w = ZipWriter(ch)
+                    for (pi in g.items) {
+                        val input = cr.openInputStream(pi.src.uri) ?: throw IllegalStateException("Tidak bisa membaca ${pi.src.name}")
+                        var fileDone = 0L
+                        val e = input.use { ins ->
+                            w.add(pi.entryName, pi.src.size, ins, { n ->
+                                fileDone += n; done += n
+                                l.onProgress(pi.src.name, fileDone, pi.src.size, done, total)
+                            }, { l.cancelled() })
                         }
-                        w.finish()
-                        ch.force(true)
+                        if (e == null) throw CancelledException()   // dibatalkan
+                        written += e
                     }
+                    w.finish()
+                    ch.force(true)
                 }
 
                 l.onStatus("verify")
-                if (!verify(context, part, written, l)) throw IllegalStateException("Pemeriksaan ZIP gagal")
+                if (!verify(part, written, l)) throw IllegalStateException("Pemeriksaan ZIP gagal")
 
-                DocumentsContract.renameDocument(cr, part, zipName)
-                    ?: throw IllegalStateException("Tidak bisa memberi nama akhir pada ZIP")
-                part = null
+                if (!part.renameTo(File(outDir, zipName))) throw IllegalStateException("Tidak bisa memberi nama akhir pada ZIP")
                 names += zipName.lowercase()
                 made++
 
@@ -217,10 +204,10 @@ object Organizer {
                     }
                 }
             } catch (_: CancelledException) {
-                part?.let { try { DocumentsContract.deleteDocument(cr, it) } catch (_: Exception) {} }
+                part.delete()
                 return RunResult(made, deleted, failures, true)
             } catch (e: Exception) {
-                part?.let { try { DocumentsContract.deleteDocument(cr, it) } catch (_: Exception) {} }
+                part.delete()
                 failures += "${g.zipName}: ${e.message ?: e.javaClass.simpleName} (file asli tidak diubah)"
                 done = groupStart + g.totalSize
             }
@@ -231,38 +218,35 @@ object Organizer {
     private class CancelledException : Exception()
 
     /** Baca ulang ZIP yang baru ditulis: daftar isi, ukuran, dan CRC32 setiap file harus sama. */
-    private fun verify(context: Context, zip: Uri, expected: List<ZipWriter.Entry>, l: Listener): Boolean {
-        context.contentResolver.openFileDescriptor(zip, "r").use { pfd ->
-            if (pfd == null) return false
-            FileInputStream(pfd.fileDescriptor).channel.use { ch ->
-                val items = ZipIndex.list(ch)
-                if (items.size != expected.size) return false
-                val byName = items.associateBy { it.name }
-                val buf = ByteBuffer.allocate(256 * 1024)
-                for (e in expected) {
-                    if (l.cancelled()) return false
-                    val z = byName[e.name] ?: return false
-                    if (z.method != 0 || z.size != e.size || z.compressedSize != e.size) return false
-                    val lh = ByteBuffer.allocate(30).order(ByteOrder.LITTLE_ENDIAN)
-                    ZipIndex.readFully(ch, lh, z.localHeaderOffset)
-                    if (lh.getInt(0) != ZipIndex.SIG_LOC) return false
-                    val nl = lh.getShort(26).toInt() and 0xffff
-                    val el = lh.getShort(28).toInt() and 0xffff
-                    var p = z.localHeaderOffset + 30 + nl + el
-                    var left = e.size
-                    val crc = CRC32()
-                    while (left > 0) {
-                        buf.clear()
-                        buf.limit(minOf(buf.capacity().toLong(), left).toInt())
-                        ZipIndex.readFully(ch, buf, p)
-                        crc.update(buf.array(), 0, buf.limit())
-                        p += buf.limit()
-                        left -= buf.limit()
-                    }
-                    if (crc.value != e.crc) return false
+    private fun verify(zip: File, expected: List<ZipWriter.Entry>, l: Listener): Boolean {
+        FileInputStream(zip).channel.use { ch ->
+            val items = ZipIndex.list(ch)
+            if (items.size != expected.size) return false
+            val byName = items.associateBy { it.name }
+            val buf = ByteBuffer.allocate(256 * 1024)
+            for (e in expected) {
+                if (l.cancelled()) return false
+                val z = byName[e.name] ?: return false
+                if (z.method != 0 || z.size != e.size || z.compressedSize != e.size) return false
+                val lh = ByteBuffer.allocate(30).order(ByteOrder.LITTLE_ENDIAN)
+                ZipIndex.readFully(ch, lh, z.localHeaderOffset)
+                if (lh.getInt(0) != ZipIndex.SIG_LOC) return false
+                val nl = lh.getShort(26).toInt() and 0xffff
+                val el = lh.getShort(28).toInt() and 0xffff
+                var p = z.localHeaderOffset + 30 + nl + el
+                var left = e.size
+                val crc = CRC32()
+                while (left > 0) {
+                    buf.clear()
+                    buf.limit(minOf(buf.capacity().toLong(), left).toInt())
+                    ZipIndex.readFully(ch, buf, p)
+                    crc.update(buf.array(), 0, buf.limit())
+                    p += buf.limit()
+                    left -= buf.limit()
                 }
-                return true
+                if (crc.value != e.crc) return false
             }
+            return true
         }
     }
 }

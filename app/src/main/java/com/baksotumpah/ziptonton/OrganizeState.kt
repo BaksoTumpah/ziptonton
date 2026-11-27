@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Status proses "Rapikan jadi ZIP" yang dibagi antara layar dan layanan latar belakang (satu proses aplikasi). */
 object OrganizeState {
-    class Job(val tree: Uri, val groups: List<Group>, val deleteOriginals: Boolean)
+    class Job(val tree: Uri, val groups: List<Group>, val deleteOriginals: Boolean, val outDir: java.io.File)
 
     @Volatile var pending: Job? = null
     @Volatile var running = false

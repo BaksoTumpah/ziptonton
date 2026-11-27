@@ -139,8 +139,8 @@
     <string name="org_missing">Tidak ada: %1$s</string>
     <string name="org_dups">Ada episode ganda (kualitas berbeda); semuanya ikut masuk</string>
     <string name="org_confirm_title">Mulai merapikan?</string>
-    <string name="org_confirm_msg_delete">%1$d ZIP akan dibuat. Setelah tiap ZIP selesai dan diperiksa, %2$d file asli (%3$s) dihapus permanen. Proses berjalan di latar belakang.</string>
-    <string name="org_confirm_msg_keep">%1$d ZIP akan dibuat. File asli tidak dihapus. Proses berjalan di latar belakang.</string>
+    <string name="org_confirm_msg_delete">%1$d ZIP akan dibuat di folder ZipTonton. Setelah tiap ZIP selesai dan diperiksa, %2$d file asli (%3$s) dihapus permanen. Proses berjalan di latar belakang.</string>
+    <string name="org_confirm_msg_keep">%1$d ZIP akan dibuat di folder ZipTonton. File asli tidak dihapus. Proses berjalan di latar belakang.</string>
     <string name="org_running">ZIP %1$d dari %2$d: %3$s</string>
     <string name="org_file">%1$s (%2$d%%)</string>
     <string name="org_verifying">Memeriksa ZIP…</string>
@@ -160,4 +160,11 @@
     <string name="org_notif_problems">%1$d bermasalah.</string>
     <string name="org_back_bg">Proses terus berjalan di latar belakang, lihat notifikasi</string>
     <string name="org_bg_hint">Proses berjalan di latar belakang. Kamu boleh keluar dari layar ini; progres ada di notifikasi.</string>
+    <string name="storage_title">Izinkan akses penyimpanan</string>
+    <string name="storage_msg">ZipTonton akan memakai folder ZipTonton di penyimpanan perangkat (dibuat kalau belum ada) untuk menyimpan film berformat ZIP. Android akan meminta izin akses file.</string>
+    <string name="storage_allow">Izinkan</string>
+    <string name="storage_later">Nanti</string>
+    <string name="storage_failed">Tidak bisa membuat folder ZipTonton</string>
+    <string name="menu_zt_folder">Pakai folder ZipTonton</string>
+    <string name="org_need_storage">Untuk menyimpan ZIP di folder ZipTonton, aplikasi butuh izin akses file. Izinkan dulu, lalu tekan Mulai lagi.</string>
 </resources>

@@ -58,7 +58,7 @@ class OrganizeService : Service() {
 
         Thread {
             val res = try {
-                Organizer.run(applicationContext, job.tree, job.groups, job.deleteOriginals, listener)
+                Organizer.run(applicationContext, job.groups, job.outDir, job.deleteOriginals, listener)
             } catch (e: Exception) {
                 RunResult(0, 0, listOf(e.message ?: e.javaClass.simpleName), false)
             }

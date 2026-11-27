@@ -3,6 +3,7 @@ package com.baksotumpah.ziptonton
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.File
 import java.io.FileInputStream
 
 /** Satu file ZIP di folder film. key = jalur relatif di folder (dipakai untuk progres & thumbnail). */
@@ -34,11 +35,47 @@ object Library {
 
     fun scan(context: Context, treeUri: Uri): List<Film> {
         val out = ArrayList<Film>()
-        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
-        walk(context, treeUri, rootId, "", 0, out, Store(context))
+        if (treeUri.scheme == "file") {
+            // Folder ZipTonton di penyimpanan perangkat (dibaca langsung, butuh izin akses file)
+            val root = File(treeUri.path ?: throw java.io.IOException("Folder tidak valid"))
+            if (!root.isDirectory) throw java.io.IOException("Folder tidak ditemukan")
+            walkFiles(context, root, "", 0, out, Store(context))
+        } else {
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            walk(context, treeUri, rootId, "", 0, out, Store(context))
+        }
         subsByKey.clear()
         out.forEach { subsByKey[it.key] = it.subs }
         return out.sortedWith { a, b -> ZipIndex.naturalCompare(a.title, b.title) }
+    }
+
+    private fun walkFiles(context: Context, dir: File, prefix: String, depth: Int, out: MutableList<Film>, store: Store) {
+        val children = dir.listFiles() ?: if (depth == 0) throw java.io.IOException("Tidak bisa membaca folder") else return
+        val subdirs = ArrayList<File>()
+        val folderFilms = ArrayList<Film>()
+        val looseSubs = ArrayList<SubFile>()
+        val subZips = ArrayList<Pair<String, List<SubFile>>>()
+        for (f in children.sortedBy { it.name.lowercase() }) {
+            val name = f.name
+            if (f.isDirectory) {
+                if (depth < 2 && !name.startsWith(".")) subdirs += f
+            } else if (name.lowercase().endsWith(".zip")) {
+                val uri = Uri.fromFile(f)
+                val size = f.length()
+                val mod = f.lastModified()
+                val ix = try { index(context, uri, size, mod) } catch (_: Exception) { Indexed(emptyList(), emptyList()) }
+                if (ix.videos.isNotEmpty()) {
+                    folderFilms += Film(prefix + name, uri, name.substringBeforeLast('.'), size, mod,
+                        store.applyOrder(prefix + name, ix.videos), ix.subs)
+                } else if (ix.subs.isNotEmpty()) {
+                    subZips += name to ix.subs
+                }
+            } else if (Subtitles.isSubName(name) && f.length() <= Subtitles.MAX_SIZE) {
+                Subtitles.make(name, uri = Uri.fromFile(f))?.let { looseSubs += it }
+            }
+        }
+        out += attachExternal(folderFilms, looseSubs, subZips)
+        for (d in subdirs) walkFiles(context, d, "$prefix${d.name}/", depth + 1, out, store)
     }
 
     private fun walk(context: Context, tree: Uri, docId: String, prefix: String, depth: Int, out: MutableList<Film>, store: Store) {
@@ -138,6 +175,7 @@ object Library {
     fun loadVideos(context: Context, uri: Uri): List<ZipItem> = loadIndexed(context, uri).videos
 
     fun folderName(treeUri: Uri): String {
+        if (treeUri.scheme == "file") return File(treeUri.path ?: "").name.ifEmpty { "Penyimpanan" }
         val id = DocumentsContract.getTreeDocumentId(treeUri)
         return id.substringAfterLast(':').substringAfterLast('/').ifEmpty { "Penyimpanan" }
     }

@@ -1,6 +1,8 @@
 package com.baksotumpah.ziptonton
 
+import android.Manifest
 import android.content.Intent
+import android.provider.Settings
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -67,6 +69,52 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private var awaitingStorage = false
+    private var askedStorage = false
+    private var autoSetupFailed = false   // cegah pengulangan kalau folder ZipTonton tidak bisa dibaca
+
+    private val storagePerms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (StorageAccess.hasAccess(this)) useZipTontonFolder()
+    }
+
+    /** Minta izin akses file (Android 11+: layar pengaturan; Android 10 ke bawah: dialog izin biasa). */
+    private fun requestStorage() {
+        val i = StorageAccess.settingsIntent(this)
+        if (i != null) {
+            awaitingStorage = true
+            try { startActivity(i) } catch (_: Exception) {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) } catch (_: Exception) {}
+            }
+        } else {
+            storagePerms.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
+        }
+    }
+
+    private fun showStoragePrompt() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.storage_title)
+            .setMessage(R.string.storage_msg)
+            .setNegativeButton(R.string.storage_later, null)
+            .setPositiveButton(R.string.storage_allow) { _, _ -> requestStorage() }
+            .show()
+    }
+
+    /** Pakai folder ZipTonton di penyimpanan perangkat sebagai folder film: sudah ada -> dipakai, belum -> dibuat. */
+    private fun useZipTontonFolder(): Boolean {
+        if (!StorageAccess.hasAccess(this)) { requestStorage(); return false }
+        val d = StorageAccess.ensureDir()
+        if (d == null) { Toast.makeText(this, R.string.storage_failed, Toast.LENGTH_LONG).show(); return false }
+        store.folderUri?.let { old ->
+            if (Uri.parse(old).scheme != "file") {
+                try { contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+            }
+        }
+        store.folderUri = Uri.fromFile(d).toString()
+        films = emptyList()
+        onResume()
+        return true
+    }
+
     private fun showSettings(anchor: View) {
         val me = this
         PopupMenu(me, anchor).apply {
@@ -75,12 +123,14 @@ class MainActivity : AppCompatActivity() {
             menu.add(0, 2, 2, R.string.menu_backup)
             menu.add(0, 3, 3, R.string.menu_restore)
             menu.add(0, 4, 4, R.string.menu_organize)
+            menu.add(0, 5, 5, R.string.menu_zt_folder)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> Updater.checkNow(me)
                     2 -> createBackup.launch("ZipTonton-backup.json")
                     3 -> openBackup.launch(arrayOf("*/*"))
                     4 -> startActivity(Intent(me, OrganizeActivity::class.java))
+                    5 -> useZipTontonFolder()
                 }
                 true
             }
@@ -115,6 +165,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Updater.resumePending(this)
+        if (awaitingStorage && StorageAccess.hasAccess(this)) {
+            awaitingStorage = false
+            if (useZipTontonFolder()) return
+        }
+        if (store.folderUri == null) {
+            // Pertama kali: kalau izin sudah ada, langsung pakai/buat folder ZipTonton; kalau belum, tawarkan sekali
+            if (StorageAccess.hasAccess(this) && !autoSetupFailed) { if (useZipTontonFolder()) return }
+            else if (!StorageAccess.hasAccess(this) && !askedStorage) { askedStorage = true; showStoragePrompt() }
+        }
         val folder = store.folderUri
         onboarding.visibility = if (folder == null) View.VISIBLE else View.GONE
         refresh.visibility = if (folder == null) View.GONE else View.VISIBLE
@@ -143,6 +202,7 @@ class MainActivity : AppCompatActivity() {
                 refresh.isRefreshing = false
                 if (result == null) {
                     // Izin folder hilang (folder dihapus/dipindah): minta pilih ulang
+                    if (Uri.parse(folder).scheme == "file") autoSetupFailed = true
                     store.folderUri = null
                     onResume()
                     return@runOnUiThread
